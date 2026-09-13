@@ -2,12 +2,15 @@
 ====================
 
 先说结论：
-  **用 Git 方式部署时，不需要 Docker Hub。** 服务器会自己现场构建镜像。
+  **用 Git 方式部署时，不需要镜像仓库。** 服务器会自己现场构建镜像。
   但如果你想「构建一次、多台机器拉取」，或者想用 GitHub Actions 自动出镜像，
-  那 Docker Hub 就派上用场了。两条路都写在下面，按需选。
+  那镜像仓库就派上用场了。两条路都写在下面，按需选。
 
-  → 只想尽快跑起来：看【路线 A：Git 直接部署】（无需 Docker Hub）
-  → 想要现成镜像 / 多机分发 / 自动构建：看【路线 B：经 Docker Hub】
+  → 只想尽快跑起来：看【路线 A：Git 直接部署】（无需镜像仓库）
+  → 想要现成镜像 / 多机分发 / 自动构建：看【路线 B：拉现成镜像（GHCR）】
+
+  注：镜像仓库用 GitHub Container Registry (GHCR)，不用 Docker Hub。
+      原因见第六节开头（Docker Hub 从国内访问不稳定）。
 
 
 ##############################################################
@@ -19,17 +22,17 @@
   你只要把几个文本文件传到服务器，服务器自己 build。
   适合：只有一台服务器、想改代码立刻生效。
 
-路线 B：经 Docker Hub
-  在本地或 GitHub Actions 先构建好镜像推到 Docker Hub，
+路线 B：拉现成镜像（GHCR）
+  用 GitHub Actions 先构建好镜像推到 GHCR，
   服务器只 docker pull，不构建。
   适合：
     - 有多个机器要部署（构建一次，处处拉取）
     - 服务器性能弱 / 磁盘小，不想在服务器上装构建环境
-    - 想用 GitHub Actions 自动构建，push 代码就出镜像
+    - 想用 GitHub Actions 自动构建，push tag 就出镜像
 
   重要：路线 B 不要求你本机装 Docker。
   用 GitHub Actions 的话，构建在 GitHub 的服务器上完成，
-  你本机只负责 git push。详见第五节。
+  你本机只负责 git push。详见第六节。
 
 要传的文件总共不到 100 KB，非常小：
 
@@ -47,7 +50,7 @@
 
 
 ##############################################################
-一、路线 A：完整部署流程（Git 方式，无需 Docker Hub）
+一、路线 A：完整部署流程（Git 方式，无需镜像仓库）
 ##############################################################
 
 【第 1 步】在你自己的电脑上，把项目推到 GitHub 仓库
@@ -138,20 +141,30 @@
 
 
 ##############################################################
-二、路线 B：经 Docker Hub 部署
+二、路线 B：拉现成镜像部署（经 GHCR）
 ##############################################################
 
 适用场景：多台机器分发、服务器性能弱、或用 GitHub Actions 自动构建。
 
-前提：镜像已经在 Docker Hub 上。怎么把它推上去，见下方第五节
-（用 GitHub Actions 的话，你本机不需要装 Docker）。
+前提：镜像已经在 GitHub Container Registry (GHCR) 上。怎么把镜像推上去，
+见下方第六节（用 GitHub Actions，你本机不需要装 Docker）。
 
 【第 1 步】确认镜像地址
 
-  假设你的 Docker Hub 用户名是 zhangsan，仓库名是 emby-missing-episodes，
-  完整镜像地址就是：
+  本项目对应你的 GitHub 账号，完整镜像地址是：
 
-      docker pull zhangsan/emby-missing-episodes:latest
+      ghcr.io/sadmion/emby-missing-episodes:latest
+
+【第 1.5 步】登录（GHCR 镜像默认私有，首次需要）
+
+  echo "你的GitHubPAT" | docker login ghcr.io -u sadmion --password-stdin
+
+  PAT：GitHub → Settings → Developer settings → Personal access tokens
+       → 勾选 read:packages
+
+  【更省事】把镜像设为公开，之后不登录也能拉：
+      https://github.com/sadmion?tab=packages → 点进镜像
+      → Package settings → Change visibility → Public
 
 【第 2 步】服务器上直接运行（不用 clone 源码）
 
@@ -165,7 +178,7 @@
         -e HOST=0.0.0.0 \
         -e PORT=8787 \
         -e TMDB_HOST=api.tmdb.org \
-        zhangsan/emby-missing-episodes:latest
+        ghcr.io/sadmion/emby-missing-episodes:latest
 
   参数说明：
     -p 127.0.0.1:8787:8787    只监听本机回环（安全），访问见第三节
@@ -184,7 +197,7 @@
 
       services:
         emby-missing-episodes:
-          image: zhangsan/emby-missing-episodes:latest
+          image: ghcr.io/sadmion/emby-missing-episodes:latest
           container_name: emby-missing-episodes
           restart: unless-stopped
           ports:
@@ -211,7 +224,7 @@
 
       docker compose pull && docker compose up -d
       # 或不用 compose：
-      docker pull zhangsan/emby-missing-episodes:latest
+      docker pull ghcr.io/sadmion/emby-missing-episodes:latest
       docker stop emby-missing-episodes && docker rm emby-missing-episodes
       # 然后重新执行第 2 步的 docker run
 
@@ -315,34 +328,25 @@
 
 
 ##############################################################
-六、把镜像推到 Docker Hub（用 GitHub Actions，本机无需 Docker）
+六、把镜像推到镜像仓库（用 GitHub Actions，本机无需 Docker）
 ##############################################################
 
 如果你本机没装 Docker，又想有个现成镜像可用，就用 GitHub Actions：
-GitHub 的服务器上有 Docker，它替你 build 并 push 到 Docker Hub。
+GitHub 的服务器上有 Docker，它替你 build 并 push 到镜像仓库。
 
-【第 1 步】准备 Docker Hub 账号
+【用哪个仓库？GHCR，不要用 Docker Hub】
 
-  注册：https://hub.docker.com/
-  记住你的**用户名**（不是邮箱）。
+  本项目已配置为推送到 **GitHub Container Registry (GHCR)**，原因：
 
-【第 2 步】申请 Access Token（不要用登录密码）
+    1. 零配置 —— 用 GitHub 内置的 GITHUB_TOKEN 认证，不用注册账号、不用配 Secret
+    2. 稳定 —— 走 GitHub 自己的网络，不受国内访问 Docker Hub 的网络问题影响
+    3. 免费 —— 公开镜像无限量
+    4. 拉取同样简单
 
-  Docker Hub → Account Settings → Security → New Access Token
-  权限选 Read & Write，起个名字（如 github-actions），生成后**立刻复制**，
-  页面关掉就再也看不到了。
+  （Docker Hub 从国内 runner 访问常失败，报 malformed / timeout 之类；
+    换 Token 也没用，因为问题在网络链路而非凭据。）
 
-【第 3 步】把 Token 存进 GitHub 仓库的 Secret
-
-  GitHub 仓库 → Settings → Secrets and variables → Actions → New repository secret
-  添加两条：
-
-      DOCKERHUB_USERNAME   你的 Docker Hub 用户名
-      DOCKERHUB_TOKEN      上一步生成的 Token
-
-  Secret 一旦保存就无法再查看，这是正常的。
-
-【第 4 步】触发构建
+【第 1 步】触发构建（无需任何配置）
 
   仓库里已经有 .github/workflows/docker-publish.yml，推一个 tag 就会自动跑：
 
@@ -352,21 +356,55 @@ GitHub 的服务器上有 Docker，它替你 build 并 push 到 Docker Hub。
   也可以在 GitHub 仓库 Actions 页面找到 "Build and Push Docker Image"，
   点 "Run workflow" 手动触发。
 
-【第 5 步】查看结果
+【第 2 步】查看结果
 
   Actions 页面能看到构建日志和进度（绿勾=成功）。
   成功后镜像地址：
 
-      <你的用户名>/emby-missing-episodes:1.0.0
-      <你的用户名>/emby-missing-episodes:latest
+      ghcr.io/sadmion/emby-missing-episodes:1.0.0
+      ghcr.io/sadmion/emby-missing-episodes:latest
 
-  然后就能用第二节的 docker run / docker compose 在服务器上拉取使用了。
+  同时提供 linux/amd64 和 linux/arm64 两种架构，
+  群晖 / 树莓派等 ARM 设备也能直接用。
+
+【第 3 步】在服务器上拉取使用
+
+  GHCR 的镜像默认是私有的，首次拉取要先登录一次：
+
+      echo "你的GitHubPAT" | docker login ghcr.io -u sadmion --password-stdin
+      docker pull ghcr.io/sadmion/emby-missing-episodes:latest
+
+  PAT 申请：GitHub → Settings → Developer settings → Personal access tokens
+            → 勾选 read:packages 权限
+
+  【推荐】把镜像设为公开，之后任何人（包括你的服务器）不登录也能拉：
+
+      1. 打开 https://github.com/sadmion?tab=packages
+      2. 点进 emby-missing-episodes
+      3. 右侧 Package settings → Danger Zone → Change visibility → Public
+
+【第 4 步】用 compose 部署（可选）
+
+      services:
+        emby-missing-episodes:
+          image: ghcr.io/sadmion/emby-missing-episodes:latest
+          container_name: emby-missing-episodes
+          restart: unless-stopped
+          ports:
+            - "127.0.0.1:8787:8787"
+          environment:
+            HOST: "0.0.0.0"
+            PORT: "8787"
+            TMDB_HOST: "api.tmdb.org"
+          extra_hosts:
+            - "host.docker.internal:host-gateway"
+
+  （更完整的 compose 示例见项目根目录的 README.md）
 
 注意事项：
-  - 工作流默认只构建 linux/amd64。要在 ARM 设备（群晖、树莓派）上用，
-    编辑 yml 把 platforms 那两行的注释去掉，改成 linux/amd64,linux/arm64。
   - 免费版 GitHub Actions 有分钟数限制，公开仓库不受限。
   - 每推一个 tag 就会构建一次，版本号即 tag 名。
+  - 重新构建会覆盖相同 tag 的镜像。
 
 
 ##############################################################

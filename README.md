@@ -52,10 +52,11 @@ docker run -d \
   --add-host=host.docker.internal:host-gateway \
   -e HOST=0.0.0.0 \
   -e PORT=8787 \
-  emby-missing-episodes:latest
+  ghcr.io/sadmion/emby-missing-episodes:latest
 ```
 
-> 把镜像名换成 `<你的DockerHub用户名>/emby-missing-episodes:latest`
+> 镜像来自 GitHub Container Registry。若拉取提示需要认证，
+> 见下方 [自动构建镜像](#自动构建镜像github-actions) 一节的登录说明。
 
 **服务器部署（阿里云 / VPS）：** 见 [`部署文档.txt`](部署文档.txt)，或一键脚本：
 
@@ -137,16 +138,10 @@ cp .env.example .env
 ## 自动构建镜像（GitHub Actions）
 
 仓库配好了 [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)，
-推 tag 即自动构建并推送到 Docker Hub。
+推 tag 即自动构建并推送到 **GitHub Container Registry (GHCR)**。
 
-**首次需配置两个 Secret**（仓库 Settings → Secrets and variables → Actions）：
-
-| Secret | 值 |
-|---|---|
-| `DOCKERHUB_USERNAME` | 你的 Docker Hub 用户名 |
-| `DOCKERHUB_TOKEN` | Docker Hub Access Token（不是登录密码） |
-
-> Access Token 申请：Docker Hub → Account Settings → Security → New Access Token
+**无需任何配置** —— 用 GitHub 内置的 `GITHUB_TOKEN` 认证，不用注册额外账号、
+不用配 Secret。开箱即用。
 
 **触发构建：**
 
@@ -155,8 +150,55 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-构建完成后镜像地址为 `<用户名>/emby-missing-episodes:1.0.0` 及 `:latest`。
+构建完成后镜像地址为：
+
+```
+ghcr.io/sadmion/emby-missing-episodes:1.0.0
+ghcr.io/sadmion/emby-missing-episodes:latest
+```
+
+同时提供 `linux/amd64` 和 `linux/arm64` 两种架构（群晖、树莓派等 ARM 设备可用）。
+
 也可在 Actions 页面手动 Run workflow。
+
+### 拉取使用
+
+**首次拉取需要登录**（GHCR 的公开镜像要求先用 GitHub 账号认证一次）：
+
+```bash
+# 用 GitHub 用户名 + Personal Access Token（勾选 read:packages）
+echo "你的PAT" | docker login ghcr.io -u sadmion --password-stdin
+docker pull ghcr.io/sadmion/emby-missing-episodes:latest
+```
+
+> 之后可以把这个包的可见性设为 Public：
+> 仓库 → 右下角 **Packages** → 点进镜像 → **Package settings** → Change visibility → Public。
+> 设为公开后，**任何人不登录也能直接 pull**。
+
+### 在 compose 里使用
+
+```yaml
+services:
+  emby-missing-episodes:
+    image: ghcr.io/sadmion/emby-missing-episodes:latest
+    container_name: emby-missing-episodes
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      TMDB_HOST: "api.tmdb.org"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+然后 `docker compose up -d`。
 
 ---
 
