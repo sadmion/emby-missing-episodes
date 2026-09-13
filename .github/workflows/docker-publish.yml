@@ -52,14 +52,16 @@ jobs:
         with:
           images: ${{ steps.repo.outputs.image }}
           tags: |
-            # 打 v1.2.3 tag 时生成 1.2.3 / 1.2 / 1 / latest
+            # 打 v1.2.3 tag 时生成 1.2.3 / 1.2 / 1
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             # 手动触发时用 short sha 做标签
             type=sha,prefix=sha-,enable=${{ github.event_name == 'workflow_dispatch' }}
-            # 每次构建都追加 latest，方便 docker pull 最新版
-            type=raw,value=latest
+          # latest 交给 flavor 管理：打正式 tag 时自动维护 latest，
+          # 避免「先发 v2.0.0 再发 v1.x 补丁」时 latest 被旧版本覆盖。
+          flavor: |
+            latest=auto
 
       - name: 构建并推送镜像
         uses: docker/build-push-action@v6
