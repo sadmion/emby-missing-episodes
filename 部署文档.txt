@@ -60,7 +60,7 @@
       git init -b main
       git add .
       git commit -m "Emby 缺集检测工具"
-      git remote add origin https://github.com/你的用户名/emby-missing-episodes.git
+      git remote add origin https://github.com/sadmion/emby-missing-episodes.git
       git push -u origin main
 
   如果仓库是在 GitHub 网页上先建好的，且初始化时勾了 README，
@@ -69,12 +69,12 @@
   国内服务器拉取 GitHub 可能慢。如果你的服务器在国内，
   也可以改用 Gitee（把上面的地址换成 gitee.com 即可），速度更快：
 
-      git remote add origin https://gitee.com/你的用户名/emby-missing-episodes.git
+      git remote add origin https://gitee.com/sadmion/emby-missing-episodes.git
 
   提示：如果 git 提示要你设置身份，先执行：
 
-      git config --global user.name "你的名字"
-      git config --global user.email "你的邮箱"
+      git config --global user.name "sadmion"
+      git config --global user.email "102721363+sadmion@users.noreply.github.com"
 
   提示：.gitignore 已经把 .env 排除掉了，Key 不会被提交，放心。
 
@@ -108,8 +108,11 @@
 【第 4 步】把代码拉到服务器
 
       mkdir -p /opt && cd /opt
-      git clone https://gitee.com/你的用户名/emby-missing-episodes.git
+      git clone https://github.com/sadmion/emby-missing-episodes.git
       cd emby-missing-episodes
+
+  国内服务器拉 GitHub 慢的话，可以改用 SSH 方式（更快更稳）：
+      git clone git@github.com:sadmion/emby-missing-episodes.git
 
 
 【第 5 步】一键部署

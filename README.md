@@ -36,7 +36,7 @@
 **本机 / NAS：**
 
 ```bash
-git clone https://github.com/<你的用户名>/emby-missing-episodes.git
+git clone https://github.com/sadmion/emby-missing-episodes.git
 cd emby-missing-episodes
 docker compose up -d --build
 ```
