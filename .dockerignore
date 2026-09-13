@@ -1,0 +1,20 @@
+# 构建上下文里不需要的东西，排除掉让镜像构建更快更干净
+.git
+.github
+.gitignore
+.workbuddy
+*.md
+README.txt
+部署文档.txt
+启动代理.bat
+启动docker.bat
+停止docker.bat
+deploy.sh
+.env
+.env.example
+config.json
+Dockerfile
+docker-compose.yml
+.dockerignore
+*.log
+data/

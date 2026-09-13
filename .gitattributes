@@ -1,0 +1,36 @@
+# Git 换行符统一配置
+#
+# 为什么需要这个文件：
+#   Windows 默认把文本存成 CRLF，Linux 是 LF。
+#   如果 Git 在传输时把 deploy.sh 的 LF 换成 CRLF，
+#   脚本传到 Linux 服务器后会直接报错：
+#       bash: ./deploy.sh: /bin/bash^M: bad interpreter: No such file or directory
+#   加上这个文件后，仓库里统一存 LF，检出到 Windows 时自动转 CRLF，
+#   传到 Linux 时就还是 LF，问题从根上避免。
+
+# 所有文本文件：仓库内统一 LF，检出时按平台自动转换
+* text=auto eol=lf
+
+# ---- 明确必须保持 LF 的文件（Linux/macOS 上直接执行）----
+*.sh text eol=lf
+deploy.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitignore text eol=lf
+.github/workflows/*.yml text eol=lf
+.env.example text eol=lf
+docker-compose.yml text eol=lf
+
+# ---- Windows 批处理：必须 CRLF，否则某些情况下会出错 ----
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ---- 二进制文件：不做任何换行符转换 ----
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.gz binary

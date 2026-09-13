@@ -1,0 +1,1815 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emby 缺集检测工具</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --text:#e6e9ef; --dim:#8b93a3; --accent:#5b9dff; --accent2:#3d7ae0;
+    --ok:#39c07a; --warn:#f0b429; --bad:#ff5c5c; --chip:#232833;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.55;
+  }
+  .wrap{max-width:1280px; margin:0 auto; padding:28px 22px 80px}
+  h1{font-size:22px; margin:0 0 4px; letter-spacing:.3px}
+  .sub{color:var(--dim); margin:0 0 22px; font-size:13px}
+
+  /* ---- 左右分栏：左＝配置/分类，右＝结果 ---- */
+  .layout{display:grid; grid-template-columns:300px 1fr; gap:18px; align-items:start}
+  .sidebar{
+    position:sticky; top:20px; max-height:calc(100vh - 40px); overflow-y:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px;
+  }
+  .sidebar::-webkit-scrollbar{width:8px}
+  .sidebar::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px}
+  .side-title{
+    font-size:12px; font-weight:700; color:var(--dim); letter-spacing:.8px;
+    margin:0 0 10px; text-transform:uppercase;
+  }
+  .side-title:not(:first-child){margin-top:20px; padding-top:18px; border-top:1px solid var(--line)}
+
+  /* ---- 可折叠分区（左侧） ---- */
+  .fold{border-top:1px solid var(--line); margin-top:16px}
+  .fold:first-of-type{border-top:0; margin-top:0}
+  .fold-hd{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    cursor:pointer; user-select:none; padding:12px 0 10px;
+    font-size:12px; font-weight:700; color:var(--dim); letter-spacing:.8px;
+    text-transform:uppercase; margin:0;
+  }
+  .fold-hd:hover{color:var(--text)}
+  .fold-hd .flead{display:flex; align-items:center; gap:7px; min-width:0}
+  .fold-hd .fstat{
+    font-size:10.5px; font-weight:600; letter-spacing:0; text-transform:none;
+    color:#8ebaff; background:rgba(91,157,255,.13); border:1px solid rgba(91,157,255,.3);
+    border-radius:20px; padding:1px 8px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:120px;
+  }
+  .fold-hd .arw{
+    flex:0 0 auto; font-size:9px; color:var(--dim);
+    transition:transform .18s; display:inline-block;
+  }
+  .fold.open .fold-hd .arw{transform:rotate(90deg); color:var(--accent)}
+  .fold-bd{display:none; padding-bottom:4px}
+  .fold.open .fold-bd{display:block}
+  .sidebar h1{font-size:18px; margin:0 0 4px; letter-spacing:.2px}
+  .sidebar .sub{font-size:12px; margin:0 0 16px; line-height:1.6}
+  .sidebar label{margin-top:12px}
+  .sidebar label:first-of-type{margin-top:0}
+  .sidebar .row{margin-top:14px; gap:8px}
+  .sidebar button{padding:9px 14px; font-size:13px; flex:1 1 auto; min-width:0}
+  .sidebar .opt{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--dim); margin:0; cursor:pointer; width:100%}
+  .sidebar .opt input{width:auto; margin:0}
+  .sidebar .drop-hint{margin-top:12px; padding:10px; font-size:11.5px}
+  .sidebar .hint{font-size:11.5px; margin-top:8px}
+  .main{min-width:0}
+  @media(max-width:900px){
+    .layout{grid-template-columns:1fr}
+    .sidebar{position:static; max-height:none}
+  }
+  .panel{
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:18px; margin-bottom:18px;
+  }
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  label{display:block; font-size:12px; color:var(--dim); margin-bottom:6px; letter-spacing:.4px}
+  input,select{
+    width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    border-radius:8px; padding:10px 12px; font-size:14px; font-family:inherit; outline:none;
+  }
+  input:focus,select:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(91,157,255,.14)}
+  .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:16px}
+  button{
+    background:var(--accent); color:#fff; border:0; border-radius:8px;
+    padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit;
+    transition:background .15s;
+  }
+  button:hover{background:var(--accent2)}
+  button:disabled{background:#3a4150; cursor:not-allowed; color:#8b93a3}
+  button.ghost{background:transparent; border:1px solid var(--line); color:var(--text)}
+  button.ghost:hover{background:var(--panel2)}
+  .hint{font-size:12px; color:var(--dim); margin-top:8px}
+  .hint a{color:var(--accent); text-decoration:none}
+  .hint a:hover{text-decoration:underline}
+
+  /* ---- 密钥输入框 + 眼睛按钮 ---- */
+  .keyfield{position:relative}
+  .keyfield input{padding-right:44px}
+  .eye{
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    width:30px; height:30px; padding:0; border-radius:7px; cursor:pointer;
+    background:transparent; border:0; color:var(--dim);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .eye:hover{background:var(--panel2); color:var(--text)}
+  .eye svg{width:16px; height:16px; display:block}
+  .eye .ic-off{display:none}
+  .eye.off .ic-on{display:none}
+  .eye.off .ic-off{display:block}
+
+  #status{margin-top:14px; font-size:13px; min-height:20px; color:var(--dim)}
+  .bar{height:4px; background:var(--panel2); border-radius:3px; overflow:hidden; margin-top:10px; display:none}
+  .bar i{display:block; height:100%; background:var(--accent); width:0; transition:width .25s}
+
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:18px}
+  .stat{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px}
+  .stat .n{font-size:24px; font-weight:700; letter-spacing:.5px}
+  .stat .l{font-size:12px; color:var(--dim); margin-top:2px}
+  .stat.ok .n{color:var(--ok)} .stat.bad .n{color:var(--bad)} .stat.warn .n{color:var(--warn)}
+
+  .toolbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px}
+  .toolbar input{width:auto; flex:1; min-width:180px}
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  th,td{padding:10px 12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--dim); font-weight:600; font-size:12px; letter-spacing:.4px; position:sticky; top:0; background:var(--panel); z-index:1}
+  tbody tr:hover{background:#1b1f28}
+  .name{font-weight:600}
+  .meta{font-size:11.5px; color:var(--dim); margin-top:2px}
+  .eps{display:flex; flex-wrap:wrap; gap:4px; max-width:520px}
+  .ep{
+    display:inline-block; min-width:26px; text-align:center; padding:1px 6px;
+    background:var(--chip); border:1px solid var(--line); border-radius:5px;
+    font-size:11.5px; color:var(--dim); font-variant-numeric:tabular-nums;
+  }
+  .ep.miss{background:rgba(255,92,92,.14); border-color:rgba(255,92,92,.45); color:#ff9c9c; font-weight:700}
+  .ep.have{background:rgba(57,192,122,.10); border-color:rgba(57,192,122,.30); color:#7fd8a8}
+  .badge{display:inline-block; padding:2px 9px; border-radius:20px; font-size:11.5px; font-weight:600; white-space:nowrap}
+  .b-bad{background:rgba(255,92,92,.15); color:#ff8f8f; border:1px solid rgba(255,92,92,.35)}
+  .b-warn{background:rgba(240,180,41,.14); color:#f5c451; border:1px solid rgba(240,180,41,.32)}
+  .b-ok{background:rgba(57,192,122,.13); color:#6fd39c; border:1px solid rgba(57,192,122,.3)}
+  .b-info{background:rgba(91,157,255,.13); color:#8ebaff; border:1px solid rgba(91,157,255,.3)}
+  .season{border-left:2px solid var(--line); padding-left:8px; margin-top:8px}
+  .season:first-child{margin-top:0}
+
+  /* ---- 剧集分布：概要 + 可展开的完整集号 ---- */
+  .dist-sum{display:flex; flex-direction:column; gap:5px}
+  .drow{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    font-size:12px; color:var(--dim); line-height:1.6;
+  }
+  .dtag{
+    flex:0 0 auto; font-size:11px; font-weight:700; color:#9aa4b6;
+    background:var(--chip); border:1px solid var(--line); border-radius:5px;
+    padding:1px 6px; font-variant-numeric:tabular-nums;
+  }
+  .drow .dmiss{
+    color:#ff9c9c; font-variant-numeric:tabular-nums; word-break:break-all;
+  }
+  .drow .dmiss b{color:#ff8f8f}
+  .dist-sum .dtoggle{
+    display:inline-flex; align-items:center; gap:5px; align-self:flex-start;
+    margin-top:2px; padding:3px 10px; border-radius:6px; cursor:pointer;
+    background:transparent; border:1px solid var(--line); color:var(--accent);
+    font-size:11.5px; font-family:inherit;
+  }
+  .dist-sum .dtoggle:hover{background:var(--panel2)}
+  .dist-sum .dtoggle .arw{font-size:8px; transition:transform .18s; display:inline-block}
+  .dist-sum.open .dtoggle .arw{transform:rotate(90deg)}
+  .dist-full{display:none; margin-top:8px}
+  .dist-sum.open .dist-full{display:block}
+  .dist-full .season{border-left-color:#2f3542}
+  #results{display:none}
+  .empty{text-align:center; color:var(--dim); padding:40px 0}
+  .err{color:#ff8f8f; background:rgba(255,92,92,.08); border:1px solid rgba(255,92,92,.25); border-radius:8px; padding:12px 14px; margin-top:12px; white-space:pre-wrap; font-size:12.5px}
+  details summary{cursor:pointer; color:var(--dim); font-size:12px; margin-top:8px}
+  details pre{background:var(--panel2); padding:10px; border-radius:8px; overflow:auto; font-size:11.5px; max-height:260px}
+  .legend{font-size:12px; color:var(--dim); display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px}
+  .legend span{display:flex; align-items:center; gap:6px}
+  .dot{width:10px; height:10px; border-radius:3px; display:inline-block}
+  .restore-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+    background:rgba(91,157,255,.10); border:1px solid rgba(91,157,255,.30);
+    border-radius:10px; padding:11px 15px; margin-bottom:14px; font-size:13px; color:#b8d0ff;
+  }
+  /* ---- 海报 ---- */
+  .cell-show{display:flex; gap:12px; align-items:flex-start}
+  .cell-text{min-width:0; flex:1}
+  .poster{
+    position:relative; flex:0 0 auto; width:54px; height:80px;
+    border-radius:6px; overflow:hidden; background:var(--panel2);
+    border:1px solid var(--line);
+  }
+  .poster img{width:100%; height:100%; object-fit:cover; display:block}
+  .poster .ph{
+    position:absolute; inset:0; display:none;
+    align-items:center; justify-content:center;
+    font-size:15px; font-weight:700; color:#4a5262;
+    background:linear-gradient(160deg,#232833,#1b1f28);
+    letter-spacing:1px;
+  }
+  .poster-fallback .ph{display:flex}
+  .poster-fallback img{display:none}
+  /* ---- 拖拽加载 ---- */
+  .drop-hint{
+    margin-top:12px; padding:12px; border-radius:8px; text-align:center;
+    border:1px dashed var(--line); color:var(--dim); font-size:12.5px;
+    transition:border-color .15s, background .15s, color .15s;
+  }
+  .drop-hint b{color:#a9b4c6}
+  body.dragging .drop-hint{
+    border-color:var(--accent); background:rgba(91,157,255,.10); color:#b8d0ff;
+  }
+  body.dragging{ outline:2px dashed var(--accent); outline-offset:-8px; }
+
+  /* ---- 详情弹窗 ---- */
+  tbody tr{cursor:pointer}
+  .name .caret{color:var(--dim); font-size:10px; margin-right:4px; display:inline-block; transition:transform .15s}
+  tbody tr.detail-open .caret{transform:rotate(90deg); color:var(--accent)}
+  tbody tr.detail-open{background:#1b1f28}
+  tr.detail-row td{padding:0; border-bottom:1px solid var(--line); background:#141821}
+  .detail-box{padding:18px 20px 22px}
+  .detail-head{display:flex; gap:18px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap}
+  .detail-poster{
+    flex:0 0 auto; width:110px; height:164px; border-radius:8px; overflow:hidden;
+    background:var(--panel2); border:1px solid var(--line); position:relative;
+  }
+  .detail-poster img{width:100%; height:100%; object-fit:cover; display:block}
+  .detail-poster .ph{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:26px; font-weight:700; color:#4a5262; letter-spacing:2px;
+    background:linear-gradient(160deg,#232833,#1b1f28);
+  }
+  .detail-info{flex:1; min-width:220px}
+  .detail-info h2{margin:0 0 4px; font-size:19px}
+  .detail-info .sub2{color:var(--dim); font-size:12.5px; margin-bottom:12px}
+  .kv{display:grid; grid-template-columns:auto 1fr; gap:5px 14px; font-size:12.5px; margin-bottom:14px}
+  .kv .k{color:var(--dim)}
+  .detail-chips{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .dsum{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px}
+  .dsum .card{
+    background:var(--panel2); border:1px solid var(--line); border-radius:9px;
+    padding:9px 14px; min-width:92px;
+  }
+  .dsum .card .n{font-size:19px; font-weight:700}
+  .dsum .card .l{font-size:11px; color:var(--dim)}
+  .dsum .card.bad .n{color:var(--bad)} .dsum .card.ok .n{color:var(--ok)}
+  .dsec-title{font-size:13px; font-weight:600; color:var(--text); margin:0 0 10px; letter-spacing:.3px}
+  .dseason{
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px; margin-bottom:10px;
+  }
+  .dseason-hd{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px}
+  .dseason-hd .t{font-size:13.5px; font-weight:600}
+  .dseason-hd .t .badge{margin-left:8px}
+  .pbar{height:6px; background:#0f1115; border-radius:4px; overflow:hidden; margin:2px 0 10px}
+  .pbar i{display:block; height:100%; background:var(--ok); border-radius:4px}
+  .dseason.inc .pbar i{background:var(--warn)}
+  .dseason.full .pbar i{background:var(--ok)}
+  .dseason .eps{max-width:none}
+  .detail-links{display:flex; gap:8px; flex-wrap:wrap; margin-top:4px}
+  .detail-links a{
+    font-size:12px; color:var(--accent); text-decoration:none;
+    border:1px solid var(--line); border-radius:7px; padding:5px 11px;
+  }
+  .detail-links a:hover{background:var(--panel2); text-decoration:none}
+  .modal-mask{
+    display:none; position:fixed; inset:0; background:rgba(8,10,14,.72);
+    z-index:100; padding:30px 18px; overflow:auto;
+  }
+  .modal-mask.on{display:block}
+  .modal{
+    max-width:900px; margin:0 auto; background:var(--panel);
+    border:1px solid var(--line); border-radius:14px; padding:22px 24px 26px;
+    box-shadow:0 24px 70px rgba(0,0,0,.55);
+  }
+  .modal-close{
+    float:right; background:transparent; border:1px solid var(--line); color:var(--dim);
+    width:32px; height:32px; border-radius:8px; font-size:17px; line-height:1; cursor:pointer; padding:0;
+  }
+  .modal-close:hover{background:var(--panel2); color:var(--text)}
+  .modal .detail-info h2{font-size:22px}
+
+  /* ---- 媒体库分类（左侧垂直导航） ---- */
+  .lib-bar{display:flex; flex-direction:column; gap:4px}
+  .lib-bar .chip{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; padding:8px 11px; border-radius:8px; cursor:pointer;
+    background:transparent; border:1px solid transparent;
+    color:var(--text); font-size:13px; text-align:left;
+    transition:background .12s, border-color .12s;
+  }
+  .lib-bar .chip:hover{background:var(--panel2); border-color:var(--line)}
+  .lib-bar .chip.on{background:rgba(91,157,255,.15); border-color:var(--accent); color:#b8d0ff; font-weight:600}
+  .chip .cname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .chip .cnt{
+    font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums;
+    flex:0 0 auto;
+  }
+  .chip.on .cnt{color:#8ebaff}
+  .chip .cnt.bad{color:#ff8f8f}
+  .libtag{
+    display:inline-block; padding:0 6px; border-radius:4px; font-size:10.5px;
+    background:var(--chip); border:1px solid var(--line); color:#9aa4b6;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="layout">
+
+  <!-- ================= 左侧栏：配置 + 分类 ================= -->
+  <aside class="sidebar">
+    <h1>Emby 缺集检测</h1>
+    <p class="sub">以 TMDB 官方集数为准，比对 Emby 库中每一季的缺失剧集。<span id="proxyBadge" class="badge b-info" style="font-size:10.5px">检测中…</span></p>
+
+    <!-- ① 服务器配置（默认收起） -->
+    <div class="fold" id="foldCfg">
+      <div class="fold-hd" data-fold="foldCfg">
+        <span class="flead">服务器配置<span class="fstat" id="cfgStat">未填写</span></span>
+        <span class="arw">▶</span>
+      </div>
+      <div class="fold-bd">
+        <label>Emby 服务器地址</label>
+        <input id="embyUrl" placeholder="http://192.168.1.10:8096" autocomplete="off">
+
+        <label>Emby API Key</label>
+        <div class="keyfield">
+          <input id="embyKey" type="password" placeholder="在 Emby 后台 → 高级 → API 密钥 生成" autocomplete="off">
+          <button type="button" class="eye off" data-eye="embyKey" title="显示 / 隐藏" aria-label="显示或隐藏内容">
+            <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+
+        <label>TMDB API Key (v3)</label>
+        <div class="keyfield">
+          <input id="tmdbKey" type="password" placeholder="在 themoviedb.org 设置 → API 中获取" autocomplete="off">
+          <button type="button" class="eye off" data-eye="tmdbKey" title="显示 / 隐藏" aria-label="显示或隐藏内容">
+            <svg class="ic-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg class="ic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+
+        <label>检测范围（Emby 媒体库）</label>
+        <select id="libSelect">
+          <option value="">全部媒体库（剧集类）</option>
+        </select>
+        <div class="hint" id="libHint">
+          填好地址和 Key 后会自动读取媒体库列表
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 分类（默认展开） -->
+    <div class="fold open" id="foldLib">
+      <div class="fold-hd" data-fold="foldLib">
+        <span class="flead">分类<span class="fstat" id="libStat">—</span></span>
+        <span class="arw">▶</span>
+      </div>
+      <div class="fold-bd">
+        <div id="libBar" class="lib-bar"></div>
+        <div class="hint" id="libBarEmpty">检测完成后，这里会按媒体库列出分类</div>
+      </div>
+    </div>
+
+    <!-- ③ 筛选 + 操作（默认展开） -->
+    <div class="fold open" id="foldAction">
+      <div class="fold-hd" data-fold="foldAction">
+        <span class="flead">筛选与操作</span>
+        <span class="arw">▶</span>
+      </div>
+      <div class="fold-bd">
+        <label>剧集状态</label>
+        <select id="filter">
+          <option value="all">全部剧集</option>
+          <option value="missing">只看有缺集的</option>
+          <option value="continuing">只看连载中</option>
+          <option value="ended">只看已完结</option>
+        </select>
+
+        <div class="row">
+          <button id="run">开始检测</button>
+          <button id="stop" class="ghost" disabled>停止</button>
+        </div>
+        <div class="row">
+          <button id="export" class="ghost" disabled>导出 CSV</button>
+          <button id="saveFile" class="ghost" disabled>保存到本地</button>
+        </div>
+        <div class="row">
+          <button id="loadFile" class="ghost">加载本地文件</button>
+          <button id="loadServer" class="ghost" style="display:none">从服务器加载</button>
+        </div>
+        <input type="file" id="fileInput" accept=".json,application/json" style="display:none">
+
+        <label class="opt" style="margin-top:14px">
+          <input type="checkbox" id="remember" checked> 记住配置到本地
+        </label>
+        <label class="opt" style="margin-top:8px">
+          <input type="checkbox" id="autoSave" checked> 扫完自动下载文件
+        </label>
+      </div>
+    </div>
+
+    <!-- ④ 提示与状态（默认收起） -->
+    <div class="fold" id="foldInfo">
+      <div class="fold-hd" data-fold="foldInfo">
+        <span class="flead">提示与状态</span>
+        <span class="arw">▶</span>
+      </div>
+      <div class="fold-bd">
+        <div class="drop-hint" id="dropHint">
+          也可把导出的 <b>.json</b> 拖到页面任意处加载
+        </div>
+        <div class="hint" id="hintServer" style="display:none">
+          结果自动存到服务器 <code id="serverPath">./data/emby-missing-result.json</code>，换设备打开也能自动加载。
+        </div>
+        <div class="hint" id="hintDirect">
+          检测前请在 Emby 放行跨域：后台 → 网络 → <b>CORS 主机</b> 填 <code>*</code>。TMDB Key 免费申请：<a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a>
+        </div>
+        <div class="hint" id="hintProxy" style="display:none">
+          已通过本地代理连接，<b>无需任何 CORS 配置</b>。TMDB Key 免费申请：<a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="bar" id="bar"><i></i></div>
+    <div id="status"></div>
+    <div id="errBox"></div>
+  </aside>
+
+  <!-- ================= 右侧主区：结果 ================= -->
+  <main class="main">
+    <div class="stats" id="stats" style="display:none">
+      <div class="stat"><div class="n" id="s-total">0</div><div class="l">检测剧集数</div></div>
+      <div class="stat bad"><div class="n" id="s-missing">0</div><div class="l">存在缺集的剧</div></div>
+      <div class="stat warn"><div class="n" id="s-episodes">0</div><div class="l">缺失总集数</div></div>
+      <div class="stat ok"><div class="n" id="s-complete">0</div><div class="l">完整剧集</div></div>
+      <div class="stat"><div class="n" id="s-skipped">0</div><div class="l">无法匹配 TMDB</div></div>
+    </div>
+
+    <div id="results">
+      <div id="restoreBanner" class="restore-banner" style="display:none"></div>
+      <div class="toolbar">
+        <input id="search" placeholder="搜索剧名…" autocomplete="off">
+      </div>
+      <div class="legend">
+        <span><i class="dot" style="background:rgba(57,192,122,.5)"></i> 已有</span>
+        <span><i class="dot" style="background:rgba(255,92,92,.6)"></i> 缺失</span>
+        <span>编号 = 集数 (E)</span>
+        <span style="color:var(--accent)">点击任意一行查看详情</span>
+      </div>
+      <div class="panel" style="padding:0;overflow:hidden;max-height:74vh;overflow-y:auto">
+        <table>
+          <thead>
+            <tr><th style="width:34%">剧集 / 季</th><th style="width:110px">状态</th><th>剧集分布</th></tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="welcomePanel">
+      <div class="empty">
+        左侧填好 Emby 地址与 Key，点「开始检测」<br>
+        <span style="font-size:12px">检测完的结果会显示在这里，并按媒体库分类</span>
+      </div>
+    </div>
+  </main>
+
+  </div>
+</div>
+
+<div class="modal-mask" id="detailMask">
+  <div class="modal" id="detailModal"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var $ = function(id){ return document.getElementById(id); };
+  var LS = 'emby_missing_cfg_v1';
+  // v2: 海报来源由 Emby 改为 TMDB，旧缓存的海报地址已失效，故升版本
+  var LS_RESULT = 'emby_missing_result_v2';
+  var state = { rows: [], running: false, abort: false, proxy: false, savedAt: null, lastPayload: null, lastStats: null,
+                libs: [], libFilter: '', userId: null, seriesLib: {} };
+
+  // ---------- 左侧分区折叠 ----------
+  // 点分区标题展开/收起；状态记到 localStorage，下次打开保持。
+  var LS_FOLD = 'emby_missing_fold_v1';
+  function initFold(){
+    var saved = {};
+    try{ saved = JSON.parse(localStorage.getItem(LS_FOLD) || '{}'); }catch(e){}
+    Array.prototype.forEach.call(document.querySelectorAll('.fold'), function(f){
+      var id = f.id;
+      if(!id) return;
+      // 有存过状态就按存的来；没存过则用 HTML 里的默认（class="fold open"）
+      if(saved.hasOwnProperty(id)) f.classList.toggle('open', !!saved[id]);
+      var hd = f.querySelector('.fold-hd');
+      if(!hd) return;
+      hd.addEventListener('click', function(){
+        var open = f.classList.toggle('open');
+        try{
+          var m = JSON.parse(localStorage.getItem(LS_FOLD) || '{}');
+          m[id] = open;
+          localStorage.setItem(LS_FOLD, JSON.stringify(m));
+        }catch(e){}
+      });
+    });
+  }
+
+  // 配置区标题右侧的状态摘要（收起时也能看到填了什么）
+  function updateCfgStat(){
+    var el = $('cfgStat');
+    if(!el) return;
+    var u = ($('embyUrl').value||'').trim();
+    var k = ($('embyKey').value||'').trim();
+    var t = ($('tmdbKey').value||'').trim();
+    if(!u && !k){
+      el.textContent = '未填写';
+      el.style.color = '';
+      el.style.background = '';
+      el.style.borderColor = '';
+      return;
+    }
+    var host = u.replace(/^https?:\/\//,'').replace(/\/.*$/,'') || '未填地址';
+    var keys = [];
+    if(k) keys.push('Emby');
+    if(t) keys.push('TMDB');
+    el.textContent = host + (keys.length ? ' · ' + keys.join('+') + ' Key' : ' · 无 Key');
+    if(k && t){
+      el.style.color = '#7fd8a8';
+      el.style.background = 'rgba(57,192,122,.13)';
+      el.style.borderColor = 'rgba(57,192,122,.3)';
+    }else{
+      el.style.color = '#f5c451';
+      el.style.background = 'rgba(240,180,41,.14)';
+      el.style.borderColor = 'rgba(240,180,41,.32)';
+    }
+  }
+
+  // ---------- 密码框眼睛按钮 ----------
+  // 点击切换 input 的 type=password/text；同时给 input 打在编辑时短暂可见的便利。
+  function initEye(){
+    Array.prototype.forEach.call(document.querySelectorAll('.eye'), function(btn){
+      var inp = $(btn.getAttribute('data-eye'));
+      if(!inp) return;
+      btn.addEventListener('click', function(){
+        var show = inp.type === 'password';
+        inp.type = show ? 'text' : 'password';
+        // 按钮上用 off 类标记「当前是隐藏状态」
+        btn.classList.toggle('off', !show);
+        btn.title = show ? '隐藏' : '显示';
+        inp.focus();
+      });
+    });
+  }
+
+  // ---------- config persistence ----------
+  function loadCfg(){
+    try{
+      var c = JSON.parse(localStorage.getItem(LS) || '{}');
+      if(c.embyUrl) $('embyUrl').value = c.embyUrl;
+      if(c.embyKey) $('embyKey').value = c.embyKey;
+      if(c.tmdbKey) $('tmdbKey').value = c.tmdbKey;
+    }catch(e){}
+  }
+  function saveCfg(){
+    if(!$('remember').checked){ localStorage.removeItem(LS); return; }
+    localStorage.setItem(LS, JSON.stringify({
+      embyUrl: $('embyUrl').value.trim(),
+      embyKey: $('embyKey').value.trim(),
+      tmdbKey: $('tmdbKey').value.trim()
+    }));
+  }
+
+  // ---------- 结果持久化 ----------
+  // 统一的载荷构造：localStorage 与导出文件共用同一结构
+  function buildPayload(rows, stats){
+    var slim = rows.map(function(r){
+      return {
+        name:r.name, year:r.year, ok:r.ok, reason:r.reason,
+        tmdbName:r.tmdbName, status:r.status, tmdbId:r.tmdbId,
+        missingCount:r.missingCount, localCount:r.localCount,
+        seasonRows:r.seasonRows,
+        seasonAll:r.seasonAll,
+        expectTotal:r.expectTotal,
+        lib:r.lib||'', libId:r.libId||'',
+        poster:r.poster || null,
+        // 详情页元信息
+        overview:r.overview || '', vote:r.vote||null, voteCount:r.voteCount||null,
+        genres:r.genres||[], firstAir:r.firstAir||'', lastAir:r.lastAir||'',
+        originalName:r.originalName||'', networks:r.networks||[],
+        posterBig:r.posterBig || null
+      };
+    });
+    return {
+      v:3,
+      kind:'emby-missing-episodes',
+      savedAt: Date.now(),
+      source: norm($('embyUrl').value),   // 记住是哪台服务器扫的
+      stats: stats,
+      rows: slim
+    };
+  }
+
+  function saveResult(rows, stats){
+    state.lastPayload = buildPayload(rows, stats);
+    // 服务端持久化（经代理打开时）：存到代理所在目录，下次打开自动加载
+    if(state.proxy){ serverSaveResult(state.lastPayload); }
+    if(!$('remember').checked) return;
+    try{
+      localStorage.setItem(LS_RESULT, JSON.stringify(state.lastPayload));
+    }catch(e){
+      // 配额溢出：退化为不保存到 localStorage，但不影响本次使用
+      try{ localStorage.removeItem(LS_RESULT); }catch(_){}
+    }
+  }
+
+  // ---------- 服务端持久化（代理模式）----------
+  // 把结果 POST 给本机代理，由它写进 ./data 目录，实现跨浏览器/跨设备保存。
+  function serverSaveResult(p){
+    try{
+      fetch('/__result', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(p)
+      }).then(function(r){ return r.json().catch(function(){ return {}; }); })
+        .then(function(j){
+          if(j && j.ok){
+            state.serverSaved = true;
+            setStatus('扫描完成，已保存到服务器（' + (j.rows||p.rows.length) + ' 部剧）。下次打开自动加载。');
+          }else{
+            setStatus('扫描完成，但服务器保存失败：' + ((j && j.error) || '未知错误'));
+          }
+        }).catch(function(){
+          setStatus('扫描完成，但服务器保存失败（无法连接代理）。');
+        });
+    }catch(e){}
+  }
+
+  // 从服务器读取上次保存的结果
+  async function serverLoadResult(){
+    try{
+      var r = await fetch('/__result', {cache:'no-store'});
+      if(!r.ok) return null;
+      var p = await r.json();
+      if(!p || p.exists === false || !isValidPayload(p)) return null;
+      return p;
+    }catch(e){ return null; }
+  }
+
+  // 删除服务器上保存的结果
+  function serverClearResult(){
+    if(!state.proxy) return;
+    try{ fetch('/__result', {method:'DELETE'}).catch(function(){}); }catch(e){}
+  }
+
+  // ---------- 导出 / 导入文件 ----------
+  function exportResultFile(){
+    if(!state.rows || !state.rows.length){ return; }
+    var p = state.lastPayload || buildPayload(state.rows, state.lastStats);
+    var text = JSON.stringify(p, null, 2);
+    var name = 'emby-missing-' + new Date(p.savedAt || Date.now()).toISOString().slice(0,19).replace(/[:T]/g,'-') + '.json';
+    var blob = new Blob([text], {type:'application/json;charset=utf-8'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    setStatus('已保存到本地文件：' + name);
+  }
+
+  // 扫描完成后自动存一份到本地（受「自动保存到文件」勾选控制）
+  function autoSaveToFile(){
+    var cb = $('autoSave');
+    if(!cb || !cb.checked) return;
+    try{ exportResultFile(); }catch(e){ /* 浏览器拦截下载时静默忽略 */ }
+  }
+
+  function isValidPayload(p){
+    return !!(p && typeof p === 'object' && Array.isArray(p.rows) && p.rows.length > 0);
+  }
+
+  function applyPayload(p, fromFile, fromServer){
+    state.rows = p.rows;
+    state.savedAt = p.savedAt || Date.now();
+    state.lastPayload = p;
+    state.lastStats = p.stats || null;
+    hideRestoreBanner();
+    render(p.rows, p.stats || {total:p.rows.length, missingShows:0, missingEp:0, complete:0, skipped:0});
+    showLoadedBanner(p, fromFile, fromServer);
+    $('export').disabled = false;
+    $('saveFile').disabled = false;
+    var src = fromServer ? '服务器' : (fromFile ? '文件' : '缓存');
+    setStatus('已加载' + src + '结果（' + fmtTime(state.savedAt) + '），共 ' + p.rows.length + ' 部剧集。');
+  }
+
+  function loadResultFile(file){
+    var fr = new FileReader();
+    fr.onload = function(){
+      try{
+        var p = JSON.parse(fr.result);
+        if(!isValidPayload(p)){
+          setErr('这个文件不是有效的扫描结果（缺少 rows 数据）。\n请确认选择的是本工具导出的 .json 文件。');
+          return;
+        }
+        setErr('');
+        applyPayload(p, true);
+      }catch(e){
+        setErr('文件解析失败：' + (e && e.message ? e.message : e) + '\n可能不是合法 JSON，或文件已损坏。');
+      }
+    };
+    fr.onerror = function(){ setErr('读取文件失败，请重试。'); };
+    fr.readAsText(file, 'utf-8');
+  }
+
+  function loadResult(){
+    try{
+      var p = JSON.parse(localStorage.getItem(LS_RESULT) || 'null');
+      if(!isValidPayload(p)) return null;
+      return p;
+    }catch(e){ return null; }
+  }
+
+  function clearResult(){
+    try{ localStorage.removeItem(LS_RESULT); }catch(e){}
+  }
+  function fmtTime(ts){
+    var d = new Date(ts);
+    var pad = function(n){ return (n<10?'0':'')+n; };
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+
+           pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+
+  // 加载文件/缓存后显示的横幅
+  function showLoadedBanner(p, fromFile, fromServer){
+    var el = $('restoreBanner');
+    if(!el) return;
+    var label = fromServer ? '已加载服务器保存的结果' : (fromFile ? '已加载文件' : '已恢复上次扫描结果');
+    el.style.display = 'flex';
+    el.innerHTML =
+      '<span>' + label +
+      ' · <b>' + esc(fmtTime(p.savedAt || Date.now())) + '</b>' +
+      (p.source ? ' · ' + esc(p.source) : '') +
+      ' · 共 ' + ((p.stats && p.stats.total) || p.rows.length) + ' 部</span>' +
+      '<span style="display:flex;gap:8px">' +
+        '<button class="ghost" id="saveFile2" style="padding:4px 12px;font-size:12px">保存到文件</button>' +
+        '<button class="ghost" id="reScan" style="padding:4px 12px;font-size:12px">重新扫描</button>' +
+      '</span>';
+    var b1 = $('saveFile2'); if(b1) b1.addEventListener('click', exportResultFile);
+    var b2 = $('reScan');    if(b2) b2.addEventListener('click', startFresh);
+  }
+
+  function hideRestoreBanner(){
+    var el = $('restoreBanner');
+    if(el){ el.style.display = 'none'; el.innerHTML = ''; }
+  }
+
+  // 右侧主区的欢迎/空状态面板
+  function hideWelcome(){ var el = $('welcomePanel'); if(el) el.style.display = 'none'; }
+  function showWelcome(){ var el = $('welcomePanel'); if(el) el.style.display = 'block'; }
+
+  async function restoreResult(){
+    // 优先从服务器加载（代理模式），其次才是浏览器本地缓存
+    if(state.proxy){
+      var sp = await serverLoadResult();
+      if(sp){ applyPayload(sp, false, true); return true; }
+    }
+    var p = loadResult();
+    if(!p) return false;
+    applyPayload(p, false);
+    return true;
+  }
+
+  // 没有历史结果时，左侧分类栏显示占位
+  function initLibBarEmpty(){
+    var bar = $('libBar'), empty = $('libBarEmpty');
+    if(!bar || !empty) return;
+    if(!bar.children.length) empty.style.display = 'block';
+  }
+
+  function startFresh(){
+    hideRestoreBanner();
+    clearResult();
+    serverClearResult();
+    state.rows = []; state.savedAt = null; state.lastPayload = null; state.lastStats = null;
+    $('results').style.display = 'none';
+    $('stats').style.display = 'none';
+    $('export').disabled = true;
+    $('saveFile').disabled = true;
+    setErr('');
+    setStatus('已清空，点「开始检测」重新扫描。');
+    paintLibBar();
+    showWelcome();
+  }
+
+  // ---------- helpers ----------
+  function norm(url){ return (url||'').trim().replace(/\/+$/,''); }
+  function setStatus(msg){ $('status').textContent = msg || ''; }
+  function setErr(msg){
+    $('errBox').innerHTML = msg ? '<div class="err">'+esc(msg)+'</div>' : '';
+  }
+  function esc(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function setProgress(p){
+    $('bar').style.display = p==null ? 'none' : 'block';
+    if(p!=null) $('bar').firstElementChild.style.width = Math.round(p*100)+'%';
+  }
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  // fetch with timeout + retry
+  async function jfetch(url, opts, tries, timeoutMs){
+    tries = tries || 3;
+    timeoutMs = timeoutMs || 15000;
+    var lastErr;
+    for(var i=0;i<tries;i++){
+      var ctl = new AbortController();
+      var t = setTimeout(function(){ ctl.abort(); }, timeoutMs);
+      try{
+        var r = await fetch(url, Object.assign({}, opts, {signal: ctl.signal}));
+        clearTimeout(t);
+        if(r.status === 429){ await sleep(1200*(i+1)); continue; }
+        if(r.status === 404) return { __status:404 };
+        if(!r.ok){
+          var em = 'HTTP '+r.status;
+          if(r.status===401) em = 'HTTP 401 —— API Key 无效';
+          throw new Error(em);
+        }
+        return await r.json();
+      }catch(e){
+        clearTimeout(t);
+        lastErr = e;
+        if(state.abort) throw new Error('已停止');
+        if(i < tries-1) await sleep(400*(i+1));
+      }
+    }
+    throw lastErr || new Error('请求失败');
+  }
+
+  // 并发池：最多 limit 个任务同时进行，结果按原顺序返回
+  async function pool(items, limit, worker, onTick){
+    var results = new Array(items.length);
+    var next = 0, done = 0;
+    async function runner(){
+      for(;;){
+        var idx = next++;
+        if(idx >= items.length || state.abort) return;
+        try{ results[idx] = await worker(items[idx], idx); }
+        catch(e){
+          var msg = e && e.message ? e.message : String(e);
+          var it = items[idx] || {};
+          results[idx] = {
+            name: it.Name || '(未命名)',
+            year: it.ProductionYear || null,
+            ok:false,
+            reason: /已停止/.test(msg) ? '已停止' : ('检测失败：' + msg),
+            seasons: [], missingCount:0,
+            poster: null,
+            lib: it.__lib || '', libId: it.__libId || ''
+          };
+        }
+        done++;
+        if(onTick) onTick(done, items.length, items[idx], results[idx]);
+      }
+    }
+    var runners = [];
+    for(var i=0;i<Math.min(limit, items.length);i++) runners.push(runner());
+    await Promise.all(runners);
+    return results;
+  }
+
+  // ---------- Emby ----------
+  async function embyGet(path){
+    var base = norm($('embyUrl').value);
+    var key  = $('embyKey').value.trim();
+    if(!base) throw new Error('请填写 Emby 服务器地址');
+    if(!key)  throw new Error('请填写 Emby API Key');
+
+    if(state.proxy){
+      // 走本地代理，绕开 CORS
+      var pu = '/__proxy/emby?base=' + encodeURIComponent(base) +
+               '&path=' + encodeURIComponent(path) +
+               '&api_key=' + encodeURIComponent(key);
+      return jfetch(pu);
+    }
+
+    var url = base + path + (path.indexOf('?')>=0?'&':'?') + 'api_key=' + encodeURIComponent(key);
+    return jfetch(url);
+  }
+
+  async function fetchSeries(parentId){
+    // all TV series, with provider ids so we can match TMDB directly
+    // parentId: 限定某个媒体库（不传则全部库）
+    var out = [], start = 0, limit = 300;
+    for(;;){
+      if(state.abort) break;
+      var p = '/emby/Items?IncludeItemTypes=Series&Recursive=true&Fields=ProviderIds,ProductionYear,Status' +
+              '&StartIndex='+start+'&Limit='+limit;
+      if(parentId) p += '&ParentId=' + encodeURIComponent(parentId);
+      var data = await embyGet(p);
+      var items = (data && data.Items) || [];
+      out = out.concat(items);
+      var total = (data && data.TotalRecordCount) || out.length;
+      setStatus('读取 Emby 剧集列表… '+out.length+' / '+total);
+      if(out.length >= total || items.length === 0) break;
+      start += limit;
+    }
+    return out;
+  }
+
+  // 读取媒体库列表（分类）。Emby 里每个「媒体库」就是一个分类，
+  // 例如「国产剧集」「国产动漫」「国产电影」各自是一个库。
+  // 实测：/emby/Library/MediaFolders 最稳（返回 Items[]，含 CollectionType），
+  // 优先用它；拿不到再退回 Users/{id}/Views。
+  async function fetchLibraries(){
+    var data = null;
+    try{ data = await embyGet('/emby/Library/MediaFolders'); }catch(e){}
+    if(!data || !data.Items || !data.Items.length){
+      // 退回 Views（部分版本只支持这个）。需要用户 Id
+      var uid = state.userId;
+      if(!uid){
+        try{
+          var list = await embyGet('/emby/Users');
+          if(list && list.length && list[0].Id) uid = state.userId = list[0].Id;
+        }catch(e){}
+      }
+      if(uid){
+        try{ data = await embyGet('/emby/Users/'+encodeURIComponent(uid)+'/Views'); }catch(e){}
+      }
+    }
+    var items = (data && data.Items) || [];
+    var libs = items.map(function(it){
+      return {
+        id: it.Id,
+        name: it.Name || '(未命名库)',
+        type: it.CollectionType || '',   // tvshows / movies / music / boxsets ...
+      };
+    }).filter(function(l){ return !!l.id; });
+    return libs;
+  }
+
+  async function fetchEpisodes(seriesId){
+    var out = [], start = 0, limit = 500;
+    for(;;){
+      if(state.abort) break;
+      var data = await embyGet('/emby/Shows/'+encodeURIComponent(seriesId)+'/Episodes?Fields=ParentIndexNumber,IndexNumber&StartIndex='+start+'&Limit='+limit);
+      var items = (data && data.Items) || [];
+      out = out.concat(items);
+      var total = (data && data.TotalRecordCount) || out.length;
+      if(out.length >= total || items.length === 0) break;
+      start += limit;
+    }
+    return out;
+  }
+
+  // ---------- 海报（TMDB） ----------
+  // posterPath 形如 /abc123.jpg，由 TMDB 的 poster_path 字段提供。
+  // 代理模式走 /__proxy/poster；直连模式直接拼 image.tmdb.org 地址。
+  // 返回 null 表示该剧没有海报。
+  var POSTER_SIZE = 'w185';
+  function tmdbPosterUrl(posterPath, size){
+    if(!posterPath) return null;
+    var s = size || POSTER_SIZE;
+    if(state.proxy){
+      return '/__proxy/poster?size=' + s +
+             '&path=' + encodeURIComponent(posterPath);
+    }
+    return 'https://image.tmdb.org/t/p/' + s + posterPath;
+  }
+
+  // ---------- TMDB ----------
+  async function tmdbGet(path, params){
+    var key = $('tmdbKey').value.trim();
+    if(!key) throw new Error('请填写 TMDB API Key');
+    var qs = Object.assign({api_key:key, language:'zh-CN'}, params||{});
+
+    if(state.proxy){
+      var pq = Object.keys(qs).map(function(k){ return k+'='+encodeURIComponent(qs[k]); }).join('&');
+      return jfetch('/__proxy/tmdb?path=' + encodeURIComponent(path) + '&' + pq);
+    }
+
+    var url = 'https://api.tmdb.org/3' + path + '?' +
+      Object.keys(qs).map(function(k){ return k+'='+encodeURIComponent(qs[k]); }).join('&');
+    return jfetch(url);
+  }
+
+  async function tmdbFind(tmdbId){
+    var d = await tmdbGet('/tv/'+tmdbId);
+    if(d && d.__status === 404) return null;
+    return d || null;
+  }
+
+  async function tmdbSearch(name, year){
+    var p = {query:name};
+    if(year) p.first_air_date_year = year;
+    var d = await tmdbGet('/search/tv', p);
+    if(!d || !d.results || !d.results.length) return null;
+    // prefer exact-ish name + year
+    var best = d.results[0];
+    for(var i=0;i<d.results.length;i++){
+      var r = d.results[i];
+      var y = (r.first_air_date||'').slice(0,4);
+      if(year && y && String(year)===String(y)){ best = r; break; }
+    }
+    return best;
+  }
+
+  // total episodes per season per TMDB
+  function tmdbSeasonMap(show){
+    var m = {};
+    (show.seasons||[]).forEach(function(s){
+      m[s.season_number] = s.episode_count || 0;
+    });
+    return m;
+  }
+
+  // ---------- 处理单部剧（供并发池调用） ----------
+  async function processSeries(s){
+    var name = s.Name || '(未命名)';
+    var year = s.ProductionYear || null;
+    var pids = s.ProviderIds || {};
+    var tmdbId = pids.Tmdb || pids.TMDB || null;
+
+    // TMDB 查询与 Emby 集数查询互不依赖，并行发出
+    var showP = (async function(){
+      if(tmdbId){
+        var d = await tmdbFind(tmdbId);
+        if(d) return d;
+      }
+      var hit = await tmdbSearch(name, year);
+      if(!hit) return null;
+      return await tmdbFind(hit.id);
+    })().catch(function(){ return null; });
+
+    var localP = fetchEpisodes(s.Id).catch(function(){ return []; });
+
+    var show = await showP;
+    var local = await localP;
+
+    if(!show){
+      return { name:name, year:year, ok:false, reason:'TMDB 未匹配到', seasons:[], missingCount:0, poster:null,
+             lib: s.__lib || '', libId: s.__libId || '' };
+    }
+
+    // 海报取自 TMDB 的 poster_path
+    var poster = tmdbPosterUrl(show.poster_path);
+
+    var have = {};
+    local.forEach(function(ep){
+      var sn = ep.ParentIndexNumber;
+      var en = ep.IndexNumber;
+      if(sn==null || en==null) return;
+      (have[sn] = have[sn] || {})[en] = true;
+    });
+
+    var expect = tmdbSeasonMap(show);
+    var seasonRows = [];      // 仅有缺集的季（列表页用，保持精简）
+    var seasonAll = [];       // 全部季（详情页用，含完整的季）
+    var showMissing = 0;
+    var expectTotal = 0;
+
+    Object.keys(expect).sort(function(a,b){ return a-b; }).forEach(function(sn){
+      sn = parseInt(sn,10);
+      if(sn <= 0) return; // 跳过特别篇
+      var count = expect[sn] || 0;
+      if(count <= 0) return;
+      var haveSet = have[sn] || {};
+      var missing = [];
+      for(var e=1;e<=count;e++){ if(!haveSet[e]) missing.push(e); }
+      expectTotal += count;
+      seasonAll.push({ season:sn, expected:count, missing:missing, haveCount:count-missing.length });
+      if(missing.length){
+        showMissing += missing.length;
+        seasonRows.push({ season:sn, expected:count, missing:missing, haveCount:count-missing.length });
+      }
+    });
+
+    return {
+      name: name,
+      year: year,
+      tmdbName: show.name,
+      status: show.status || '',
+      seasons: show.number_of_seasons || seasonRows.length,
+      tmdbId: show.id,
+      ok: true,
+      missingCount: showMissing,
+      seasonRows: seasonRows,
+      seasonAll: seasonAll,
+      expectTotal: expectTotal,
+      localCount: local.length,
+      poster: poster,
+      // 详情页用的 TMDB 元信息
+      overview: show.overview || '',
+      vote: show.vote_average || null,
+      voteCount: show.vote_count || null,
+      genres: (show.genres || []).map(function(g){ return g.name; }),
+      firstAir: show.first_air_date || '',
+      lastAir: show.last_air_date || '',
+      originalName: show.original_name || '',
+      networks: (show.networks || []).map(function(n){ return n.name; }),
+      posterBig: tmdbPosterUrl(show.poster_path, 'w300'),
+      lib: s.__lib || '',      // 所属 Emby 媒体库（分类）
+      libId: s.__libId || ''
+    };
+  }
+
+  // ---------- core ----------
+  async function run(){
+    state.running = true; state.abort = false;
+    $('run').disabled = true; $('stop').disabled = false; $('export').disabled = true;
+    $('results').style.display = 'none';
+    $('stats').style.display = 'none';
+    hideWelcome();
+    setErr('');
+    saveCfg();
+
+    try{
+      // 1. 读媒体库列表（分类）
+      setStatus('连接 Emby，读取媒体库…');
+      var libs = [];
+      try{ libs = await fetchLibraries(); }catch(e){}
+      state.libs = libs;
+      refreshLibOptions(libs);
+
+      var selLib = $('libSelect').value;
+      var series;
+
+      if(libs.length){
+        // 按库的 CollectionType 精确筛选剧集类库
+        var targets = libs.filter(function(l){
+          if(selLib) return l.id === selLib;
+          return l.type === 'tvshows' || l.type === 'mixed' || !l.type;
+        });
+        if(!targets.length){
+          throw new Error('选中的媒体库里没有剧集内容，请换一个库或选「全部媒体库」。');
+        }
+        series = [];
+        state.__seen = {};
+        for(var i=0;i<targets.length;i++){
+          if(state.abort) break;
+          setStatus('读取媒体库「' + targets[i].name + '」… 已累计 ' + series.length + ' 部');
+          var its = await fetchSeries(targets[i].id);
+          byLibPush(series, its, targets[i]);
+        }
+      }else{
+        // 取不到库列表（权限/接口差异）→ 全库扫描
+        setStatus('未取到媒体库列表，改为全库扫描…');
+        series = await fetchSeries();
+      }
+
+      if(!series.length) throw new Error('未从 Emby 读取到任何剧集。请检查 Emby 地址 / API Key，以及所选的媒体库。');
+
+      // 2. 并发检测
+      var CONCURRENCY = 8;
+      setStatus('共 ' + series.length + ' 部剧集，并发 ' + CONCURRENCY + ' 路检测中…');
+      var t0 = Date.now();
+
+      var results = await pool(series, CONCURRENCY, processSeries, function(done, total, item, r){
+        var pct = done / total;
+        setProgress(pct);
+        var elapsed = (Date.now() - t0) / 1000;
+        var eta = done > 0 ? Math.round(elapsed / done * (total - done)) : 0;
+        setStatus(
+          '检测中 ' + done + '/' + total +
+          '  ·  ' + Math.round(pct*100) + '%' +
+          '  ·  已用 ' + Math.round(elapsed) + 's' +
+          (eta > 2 ? '  预计还需 ' + eta + 's' : '') +
+          (r && r.ok && r.missingCount ? '   | 刚发现缺集：' + item.Name + ' (缺' + r.missingCount + '集)' : '')
+        );
+      });
+
+      var skipped = 0, totalMissingEp = 0, totalMissingShows = 0, completeShows = 0;
+      results.forEach(function(r){
+        if(!r || r.__error || !r.ok){ skipped++; return; }
+        if(r.missingCount > 0){ totalMissingShows++; totalMissingEp += r.missingCount; }
+        else completeShows++;
+      });
+
+      var secs = Math.round((Date.now() - t0)/1000);
+      var stats = {total:results.length, missingShows:totalMissingShows, missingEp:totalMissingEp, complete:completeShows, skipped:skipped};
+      setProgress(1); setStatus('检测完成，共 ' + results.length + ' 部剧集，耗时 ' + secs + ' 秒');
+      state.rows = results;
+      state.savedAt = Date.now();
+      state.lastStats = stats;
+      render(results, stats);
+      saveResult(results, stats);
+      hideRestoreBanner();
+      $('export').disabled = false;
+      $('saveFile').disabled = false;
+      autoSaveToFile();
+    }catch(e){
+      reportRunError(e);
+    }finally{
+      state.running = false;
+      $('run').disabled = false; $('stop').disabled = true;
+      setProgress(null);
+    }
+  }
+
+  // 把某个库的剧集并入总表，打上库名标记（按 Id 去重，避免跨库重复）
+  function byLibPush(acc, items, lib){
+    var seen = state.__seen || (state.__seen = {});
+    items.forEach(function(it){
+      if(seen[it.Id]) return;
+      seen[it.Id] = true;
+      it.__lib = lib.name;
+      it.__libId = lib.id;
+      acc.push(it);
+    });
+  }
+
+  // 统一错误提示
+  function reportRunError(e){
+    var msg = (e && e.message ? e.message : e);
+    var isNetwork = /Failed to fetch|NetworkError|Load failed/.test(msg);
+    var stopped = /已停止/.test(msg);
+    if(isNetwork && !state.proxy){
+      setErr('出错了：' + msg + '\n\n' +
+        '这是浏览器跨域 (CORS) 拦截。你现在是「直连模式」（看标题右边的蓝色徽章）。\n' +
+        '最省事的解决办法：用自带本地代理，完全不用碰 CORS 设置。\n\n' +
+        '【推荐】\n' +
+        '  1. 打开工具所在文件夹\n' +
+        '  2. 双击运行  启动代理.bat  （会弹出一个黑色窗口，别关它）\n' +
+        '  3. 浏览器会自动打开 http://127.0.0.1:8787\n' +
+        '  4. 在那边重新点「开始检测」\n' +
+        '  标题右边变成绿色「本地代理已启用」就成功了。\n\n' +
+        '【如果你想坚持直连】\n' +
+        '  Emby 后台 → 网络 → CORS 主机 填 * ，重启 Emby。\n' +
+        '  注意：用 file:// 打开时 Origin 是 null，部分 Emby 版本即使配了 * 也仍会拒绝，' +
+        '所以这条路不保证成功。');
+    } else if(isNetwork && state.proxy){
+      setErr('出错了：' + msg + '\n\n' +
+        '代理已启用但连不上 Emby，通常是下面几种情况：\n' +
+        '  1. Emby 服务器地址填错了（检查 IP、端口、是否 http/https）\n' +
+        '  2. Emby 服务没在运行\n' +
+        '  3. 这台电脑访问不到那个地址（不在同一网络 / 防火墙拦截）\n\n' +
+        '可以先把 Emby 地址粘到浏览器地址栏试试能否打开。');
+    } else if(stopped){
+      setErr('已停止检测。');
+    } else {
+      setErr('出错了：' + msg + '\n\n请检查 Emby 地址 / API Key / TMDB Key 是否填写正确。');
+    }
+  }
+
+  // ---------- render ----------
+  function statusBadge(st){
+    var map = {
+      'Returning Series':['连载中','b-info'],
+      'Ended':['已完结','b-ok'],
+      'Canceled':['已砍','b-warn'],
+      'In Production':['制作中','b-info'],
+      'Planned':['已计划','b-info'],
+      'Pilot':['试播','b-warn']
+    };
+    var m = map[st] || [st||'未知','b-info'];
+    return '<span class="badge '+m[1]+'">'+esc(m[0])+'</span>';
+  }
+
+  function render(rows, stats){
+    $('stats').style.display = 'grid';
+    hideWelcome();
+    $('s-total').textContent = stats.total;
+    $('s-missing').textContent = stats.missingShows;
+    $('s-episodes').textContent = stats.missingEp;
+    $('s-complete').textContent = stats.complete;
+    $('s-skipped').textContent = stats.skipped;
+    $('results').style.display = 'block';
+    paintLibBar();
+    paint();
+  }
+
+  // 填充「检测范围」下拉：把读取到的媒体库列进去
+  function refreshLibOptions(libs){
+    var sel = $('libSelect');
+    if(!sel) return;
+    var cur = sel.value || state.presetLib || '';
+    sel.innerHTML = '<option value="">全部媒体库（剧集类）</option>' +
+      libs.map(function(l){
+        var tag = l.type === 'movies' ? '（电影）' : (l.type === 'tvshows' ? '（剧集）' : '');
+        return '<option value="'+esc(l.id)+'">'+esc(l.name + tag)+'</option>';
+      }).join('');
+    if(cur) sel.value = cur;
+    state.presetLib = '';
+    var hint = $('libHint');
+    if(hint){
+      var tvCount = libs.filter(function(l){ return l.type==='tvshows'||l.type==='mixed'||!l.type; }).length;
+      hint.textContent = libs.length
+        ? '已读取到 ' + libs.length + ' 个媒体库（其中 ' + tvCount + ' 个剧集类），可只检测其中一个'
+        : '没读到媒体库列表，将扫描全部内容';
+    }
+  }
+
+  // 左侧分类导航：垂直列表，点一下切换库
+  function paintLibBar(){
+    var bar = $('libBar');
+    var empty = $('libBarEmpty');
+    if(!bar) return;
+    // 按库名聚合统计
+    var map = {};
+    state.rows.forEach(function(r){
+      var k = r.lib || '';
+      if(!map[k]) map[k] = { name:k, total:0, missing:0, missingEp:0 };
+      map[k].total++;
+      if(r.ok && r.missingCount){ map[k].missing++; map[k].missingEp += r.missingCount; }
+    });
+    var keys = Object.keys(map);
+    var stat = $('libStat');
+
+    // 没有数据 → 显示占位提示
+    if(!keys.length){
+      bar.innerHTML = '';
+      if(empty) empty.style.display = 'block';
+      if(stat) stat.textContent = '—';
+      return;
+    }
+    if(empty) empty.style.display = 'none';
+    if(stat){
+      var badShows = state.rows.filter(function(r){ return r.ok && r.missingCount; }).length;
+      stat.textContent = keys.length + ' 个库 · ' + state.rows.length + ' 部' +
+                         (badShows ? ' · 缺' + badShows : '');
+    }
+
+    var html = '';
+    var allBad = state.rows.filter(function(r){ return r.ok && r.missingCount; }).length;
+    html += '<span class="chip'+(state.libFilter?'':' on')+'" data-lib="">' +
+            '<span class="cname">全部' + (keys.length>1 ? '（'+keys.length+' 个库）' : '') + '</span>' +
+            '<span class="cnt'+(allBad?' bad':'')+'">'+state.rows.length+'</span></span>';
+    keys.sort(function(a,b){ return (map[b].total - map[a].total); });
+    keys.forEach(function(k){
+      var it = map[k];
+      var name = k || '未分类';
+      html += '<span class="chip'+(state.libFilter===k?' on':'')+'" data-lib="'+esc(k)+'" title="'+esc(name)+'">' +
+              '<span class="cname">'+esc(name)+'</span>' +
+              '<span class="cnt'+(it.missing?' bad':'')+'">'+it.total+
+              (it.missing ? ' · 缺'+it.missing : '') + '</span></span>';
+    });
+    bar.innerHTML = html;
+    Array.prototype.forEach.call(bar.querySelectorAll('.chip'), function(c){
+      c.addEventListener('click', function(){
+        state.libFilter = c.getAttribute('data-lib') || '';
+        paintLibBar();
+        paint();
+      });
+    });
+  }
+
+  function paint(){
+    var q = ($('search').value||'').trim().toLowerCase();
+    var flt = $('filter').value;
+    var tbody = $('tbody');
+    tbody.innerHTML = '';
+
+    var list = state.rows.filter(function(r){
+      if(state.libFilter && (r.lib || '') !== state.libFilter) return false;
+      if(q && (r.name||'').toLowerCase().indexOf(q)<0 && (r.tmdbName||'').toLowerCase().indexOf(q)<0) return false;
+      var miss = r.ok && r.missingCount>0;
+      if(flt==='missing' && !miss) return false;
+      if(flt==='continuing' && r.status!=='Returning Series') return false;
+      if(flt==='ended' && r.status!=='Ended') return false;
+      return true;
+    });
+
+    // sort: shows with missing first, then by missing count desc, then name
+    list.sort(function(a,b){
+      var am = (a.ok && a.missingCount>0)?1:0, bm = (b.ok && b.missingCount>0)?1:0;
+      if(am!==bm) return bm-am;
+      var ac = a.missingCount||0, bc = b.missingCount||0;
+      if(ac!==bc) return bc-ac;
+      return (a.name||'').localeCompare(b.name||'','zh');
+    });
+
+    if(!list.length){
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">没有符合条件的剧集</td></tr>';
+      return;
+    }
+
+    list.forEach(function(r){
+      var tr = document.createElement('tr');
+      var badge, distHtml = '';
+
+      if(!r.ok){
+        badge = '<span class="badge b-warn">未匹配</span>';
+        distHtml = '<span class="meta">'+esc(r.reason||'')+'</span>';
+      }else if(r.missingCount>0){
+        badge = '<span class="badge b-bad">缺 '+r.missingCount+' 集</span>';
+      }else{
+        badge = '<span class="badge b-ok">完整</span>';
+      }
+
+      if(r.ok && r.seasonRows && r.seasonRows.length){
+        // 默认只显示「哪一季缺哪些集」的文字概要；完整集号网格按需延迟生成（性能）
+        var sumRows = r.seasonRows.map(function(sr){
+          var list = sr.missing.length<=40
+            ? 'E'+sr.missing.join(', E')
+            : 'E'+sr.missing.slice(0,40).join(', E')+' …';
+          return '<div class="drow">' +
+                   '<span class="dtag">S'+sr.season+'</span>' +
+                   '<span>应有 '+sr.expected+' 集，缺 <b>'+sr.missing.length+'</b> 集</span>' +
+                   '<span class="dmiss">'+esc(list)+'</span>' +
+                 '</div>';
+        }).join('');
+
+        var totalSeason = r.seasonRows.length;
+        distHtml =
+          '<div class="dist-sum">' +
+            sumRows +
+            '<button type="button" class="dtoggle" data-seasons="'+totalSeason+'">' +
+              '<span class="arw">▶</span>展开完整集号（'+totalSeason+' 季）' +
+            '</button>' +
+            '<div class="dist-full"></div>' +
+          '</div>';
+      }else if(r.ok){
+        distHtml = '<span class="meta">共 '+r.localCount+' 集，全部齐全</span>';
+      }
+
+      var meta = [];
+      if(r.year) meta.push(r.year);
+      if(r.lib) meta.push('<span class="libtag">'+esc(r.lib)+'</span>');
+      if(r.tmdbName && r.tmdbName !== r.name) meta.push('TMDB: '+r.tmdbName);
+      if(r.status) meta.push(statusBadge(r.status));
+
+      // 海报：有则用 Emby 图，加载失败自动换成占位图
+      var posterHtml;
+      if(r.poster){
+        posterHtml = '<div class="poster">' +
+          '<img src="'+esc(r.poster)+'" alt="" loading="lazy" ' +
+          'onerror="this.parentNode.classList.add(\'poster-fallback\');this.remove();">' +
+          '<span class="ph">'+esc((r.name||'?').slice(0,2))+'</span>' +
+          '</div>';
+      }else{
+        posterHtml = '<div class="poster poster-fallback"><span class="ph">'+
+          esc((r.name||'?').slice(0,2))+'</span></div>';
+      }
+
+      tr.innerHTML =
+        '<td><div class="cell-show">'+posterHtml+
+          '<div class="cell-text">'+
+            '<div class="name"><span class="caret">▶</span>'+esc(r.name)+'</div>'+
+            '<div class="meta">'+meta.join(' · ')+'</div>'+
+          '</div>'+
+        '</div></td>' +
+        '<td>'+badge+'</td>' +
+        '<td>'+distHtml+'</td>';
+      tr.title = '点击查看详情';
+      tr.addEventListener('click', function(ev){
+        // 点「展开完整集号」按钮时只做展开，不弹详情
+        var tg = ev.target;
+        while(tg && tg !== tr){
+          if(tg.classList && tg.classList.contains('dtoggle')){
+            var box = tg.parentNode;
+            var full = box.querySelector('.dist-full');
+            // 首次展开时才生成集号网格（延迟渲染，避免一次性造几万个节点）
+            if(full && !full.getAttribute('data-rendered')){
+              full.innerHTML = buildDistFull(r);
+              full.setAttribute('data-rendered', '1');
+            }
+            var open = box.classList.toggle('open');
+            tg.innerHTML = '<span class="arw">▶</span>' +
+              (open ? '收起完整集号' : '展开完整集号（' + tg.getAttribute('data-seasons') + ' 季）');
+            return;
+          }
+          tg = tg.parentNode;
+        }
+        openDetail(r, tr);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  // 生成某一部剧的完整集号网格（仅在用户展开时才调用）
+  function buildDistFull(r){
+    return (r.seasonRows || []).map(function(sr){
+      var missMap = {};
+      sr.missing.forEach(function(e){ missMap[e] = true; });
+      var cells = '';
+      for(var e=1;e<=sr.expected;e++){
+        cells += '<span class="ep '+(missMap[e]?'miss':'have')+'">'+e+'</span>';
+      }
+      return '<div class="season"><span class="meta">S'+sr.season+' · 应有 '+sr.expected +
+             ' 集，缺 '+sr.missing.length+' 集</span>' +
+             '<div class="eps" style="margin-top:5px">'+cells+'</div></div>';
+    }).join('');
+  }
+
+  // ---------- 详情弹窗 ----------
+  function statusText(s){
+    if(s === 'Returning Series') return '连载中';
+    if(s === 'Ended') return '已完结';
+    if(s === 'Canceled') return '已砍';
+    if(s === 'In Production') return '制作中';
+    if(s === 'Planned') return '已预定';
+    return s || '';
+  }
+
+  // 从 seasonAll 生成某一季的集数网格
+  function seasonEpsHtml(sr){
+    var missMap = {};
+    sr.missing.forEach(function(e){ missMap[e] = true; });
+    var cells = '';
+    for(var e=1;e<=sr.expected;e++){
+      cells += '<span class="ep '+(missMap[e]?'miss':'have')+'">'+e+'</span>';
+    }
+    return cells;
+  }
+
+  function openDetail(r, tr){
+    var m = $('detailModal');
+    var ratio = r.expectTotal ? Math.round((r.expectTotal - (r.missingCount||0)) / r.expectTotal * 100) : 100;
+
+    // 海报
+    var posterSrc = r.posterBig || r.poster;
+    var posterHtml = posterSrc
+      ? '<div class="detail-poster"><img src="'+esc(posterSrc)+'" alt="" ' +
+        'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';">' +
+        '<span class="ph" style="display:none">'+esc((r.name||'?').slice(0,2))+'</span></div>'
+      : '<div class="detail-poster"><span class="ph" style="display:flex">'+esc((r.name||'?').slice(0,2))+'</span></div>';
+
+    // 信息键值
+    var kv = [];
+    if(r.lib)         kv.push(['所属分类', r.lib]);
+    if(r.year)        kv.push(['首播年份', r.year]);
+    if(r.firstAir)    kv.push(['首播日期', r.firstAir]);
+    if(r.lastAir)     kv.push(['最近播出', r.lastAir]);
+    if(r.originalName && r.originalName !== r.name) kv.push(['原始名', r.originalName]);
+    if(r.tmdbName && r.tmdbName !== r.name) kv.push(['TMDB 名称', r.tmdbName]);
+    if(r.status)      kv.push(['状态', statusText(r.status)]);
+    if(r.genres && r.genres.length) kv.push(['类型', r.genres.join(' / ')]);
+    if(r.networks && r.networks.length) kv.push(['播出平台', r.networks.join(' / ')]);
+    if(r.vote != null) kv.push(['TMDB 评分', r.vote.toFixed(1) + ' / 10' + (r.voteCount ? '（' + r.voteCount + ' 票）' : '')]);
+    if(r.tmdbId)      kv.push(['TMDB ID', r.tmdbId]);
+    if(r.localCount != null) kv.push(['本地集数', r.localCount + ' 集']);
+
+    var kvHtml = '<div class="kv">' + kv.map(function(p){
+      return '<span class="k">'+esc(p[0])+'</span><span>'+esc(String(p[1]))+'</span>';
+    }).join('') + '</div>';
+
+    // 统计卡
+    var cards = '<div class="dsum">' +
+      '<div class="card"><div class="n">'+(r.seasons||0)+'</div><div class="l">季数</div></div>' +
+      '<div class="card"><div class="n">'+(r.expectTotal||r.localCount||0)+'</div><div class="l">应有集数</div></div>' +
+      '<div class="card '+(r.missingCount?'bad':'ok')+'"><div class="n">'+(r.missingCount||0)+'</div><div class="l">缺失集数</div></div>' +
+      '<div class="card"><div class="n">'+(r.localCount||0)+'</div><div class="l">本地已有</div></div>' +
+      '<div class="card '+((r.missingCount||0)>0?'':'ok')+'"><div class="n">'+ratio+'%</div><div class="l">完整度</div></div>' +
+    '</div>';
+
+    // 剧集简介
+    var overview = r.overview
+      ? '<div class="dsec-title">剧情简介</div><div style="font-size:12.5px;color:var(--dim);margin-bottom:16px;line-height:1.7">'+esc(r.overview)+'</div>'
+      : '';
+
+    // 逐季明细
+    var seasons = r.seasonAll || r.seasonRows || [];
+    var seasonsHtml = '';
+    if(seasons.length){
+      seasonsHtml = '<div class="dsec-title">分季明细（' + seasons.length + ' 季）</div>' +
+        seasons.map(function(sr){
+          var cls = sr.missing.length ? 'inc' : 'full';
+          var pct = Math.round(sr.haveCount / sr.expected * 100);
+          var badge = sr.missing.length
+            ? '<span class="badge b-bad">缺 '+sr.missing.length+' 集</span>'
+            : '<span class="badge b-ok">完整</span>';
+          return '<div class="dseason '+cls+'">' +
+            '<div class="dseason-hd">' +
+              '<div class="t">第 '+sr.season+' 季'+badge+'</div>' +
+              '<div class="meta">'+sr.haveCount+' / '+sr.expected+' 集'+ (sr.missing.length ? '，缺 E'+sr.missing.join(', E') : '') +'</div>' +
+            '</div>' +
+            '<div class="pbar"><i style="width:'+pct+'%"></i></div>' +
+            '<div class="eps">'+seasonEpsHtml(sr)+'</div>' +
+          '</div>';
+        }).join('');
+    } else if(r.ok){
+      seasonsHtml = '<div class="dsec-title">分季明细</div><div class="meta">共 '+ (r.localCount||0) +' 集，全部齐全</div>';
+    }
+
+    // 外链
+    var links = '';
+    if(r.tmdbId){
+      links = '<div class="detail-links">' +
+        '<a href="https://www.themoviedb.org/tv/'+r.tmdbId+'" target="_blank" rel="noopener">TMDB 页面 ↗</a>' +
+        '<a href="https://www.imdb.com/find?q='+encodeURIComponent(r.originalName||r.tmdbName||r.name||'')+'" target="_blank" rel="noopener">IMDb 搜索 ↗</a>' +
+      '</div>';
+    }
+
+    // 未匹配的剧
+    if(!r.ok){
+      m.innerHTML =
+        '<button class="modal-close" id="detailClose">×</button>' +
+        '<div class="detail-head">' + posterHtml +
+          '<div class="detail-info">' +
+            '<h2>'+esc(r.name)+'</h2>' +
+            '<div class="sub2">'+ (r.year ? r.year + ' · ' : '') +'未能匹配到 TMDB</div>' +
+            '<div class="err" style="margin-top:0">'+esc(r.reason||'TMDB 未匹配到')+'\n\n可能原因：剧名是中文/别名、冷门剧、或 TMDB 上没有收录。\n可在 Emby 里给这部剧设置正确的 TMDB ID 后再扫描。' +
+            (r.tmdbId ? '\n已尝试的 TMDB ID：' + esc(r.tmdbId) : '') + '</div>' +
+          '</div>' +
+        '</div>';
+      showMask();
+      return;
+    }
+
+    m.innerHTML =
+      '<button class="modal-close" id="detailClose">×</button>' +
+      '<div class="detail-head">' + posterHtml +
+        '<div class="detail-info">' +
+          '<h2>'+esc(r.name)+'</h2>' +
+          '<div class="sub2">'+ esc([r.year||'', statusText(r.status)].filter(Boolean).join(' · ')) +'</div>' +
+          kvHtml +
+          links +
+        '</div>' +
+      '</div>' +
+      cards +
+      overview +
+      seasonsHtml;
+
+    showMask();
+    var cb = $('detailClose'); if(cb) cb.addEventListener('click', closeDetail);
+  }
+
+  function showMask(){
+    $('detailMask').classList.add('on');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDetail(){
+    $('detailMask').classList.remove('on');
+    $('detailModal').innerHTML = '';
+    document.body.style.overflow = '';
+  }
+
+  // ---------- export ----------
+  function exportCsv(){
+    var rows = [['分类','剧集','年份','TMDB名称','季','应有集数','缺失集数','缺失集号']];
+    state.rows.forEach(function(r){
+      var lib = r.lib || '';
+      if(!r.ok){
+        rows.push([lib, r.name, r.year||'', '', '', '', '', '(TMDB未匹配)']);
+        return;
+      }
+      if(!r.missingCount){
+        rows.push([lib, r.name, r.year||'', r.tmdbName||'', '', '', '0', '']);
+        return;
+      }
+      r.seasonRows.forEach(function(sr){
+        rows.push([lib, r.name, r.year||'', r.tmdbName||'', sr.season, sr.expected, sr.missing.length, 'E'+sr.missing.join('|E')]);
+      });
+    });
+    var csv = rows.map(function(r){
+      return r.map(function(c){
+        c = String(c==null?'':c);
+        return /[",\n]/.test(c) ? '"'+c.replace(/"/g,'""')+'"' : c;
+      }).join(',');
+    }).join('\r\n');
+    var blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'emby-missing-episodes-'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  // ---------- proxy auto-detect ----------
+  function setModeUi(isProxy){
+    var badge = $('proxyBadge');
+    if(isProxy){
+      badge.className = 'badge b-ok';
+      badge.textContent = '本地代理已启用';
+      badge.title = '所有请求经本地代理转发，无需配置 Emby CORS';
+      $('hintProxy').style.display = 'block';
+      $('hintDirect').style.display = 'none';
+    }else{
+      badge.className = 'badge b-info';
+      badge.textContent = '直连模式 · 需 Emby 开启 CORS';
+      badge.title = '当前为直连。若报 CORS 错误，请双击「启动代理.bat」后改用 http://127.0.0.1:8787 打开';
+      $('hintProxy').style.display = 'none';
+      $('hintDirect').style.display = 'block';
+    }
+  }
+
+  async function detectProxy(){
+    try{
+      var r = await fetch('/__health', {cache:'no-store'});
+      if(r.ok){
+        var j = await r.json();
+        if(j && j.ok){
+          state.proxy = true;
+          setModeUi(true);
+          if(j.port) $('proxyBadge').textContent = '本地代理已启用 · 端口 ' + j.port;
+          var ls = $('loadServer'); if(ls) ls.style.display = '';
+          var hs = $('hintServer'); if(hs) hs.style.display = 'block';
+          await loadProxyCfg();
+          return;
+        }
+      }
+    }catch(e){}
+    state.proxy = false;
+    setModeUi(false);
+  }
+
+  async function loadProxyCfg(){
+    try{
+      var r = await fetch('/__config', {cache:'no-store'});
+      if(!r.ok) return;
+      var c = await r.json();
+      if(c.embyUrl && !$('embyUrl').value) $('embyUrl').value = c.embyUrl;
+      if(c.embyKey && !$('embyKey').value) $('embyKey').value = c.embyKey;
+      if(c.tmdbKey && !$('tmdbKey').value) $('tmdbKey').value = c.tmdbKey;
+      if(c.libSelect) state.presetLib = c.libSelect;
+      updateCfgStat();
+    }catch(e){}
+  }
+
+  // ---------- events ----------
+  $('run').addEventListener('click', run);
+  $('stop').addEventListener('click', function(){ state.abort = true; setStatus('正在停止…'); });
+  $('export').addEventListener('click', exportCsv);
+  $('saveFile').addEventListener('click', exportResultFile);
+  $('loadFile').addEventListener('click', function(){ $('fileInput').click(); });
+  $('loadServer').addEventListener('click', async function(){
+    setStatus('正在从服务器加载…');
+    var p = await serverLoadResult();
+    if(!p){ setErr('服务器上没有已保存的扫描结果。'); setStatus(''); return; }
+    setErr('');
+    applyPayload(p, false, true);
+  });
+  $('fileInput').addEventListener('change', function(e){
+    var f = e.target.files && e.target.files[0];
+    if(f) loadResultFile(f);
+    e.target.value = '';   // 允许重复选同一个文件
+  });
+  $('search').addEventListener('input', paint);
+  $('filter').addEventListener('change', paint);
+  $('libSelect').addEventListener('change', function(){
+    setStatus('已选择检测范围，点「开始检测」生效。');
+  });
+  $('embyUrl').addEventListener('change', function(){ saveCfg(); updateCfgStat(); });
+  $('embyKey').addEventListener('change', function(){ saveCfg(); updateCfgStat(); });
+  $('tmdbKey').addEventListener('change', function(){ saveCfg(); updateCfgStat(); });
+  $('embyUrl').addEventListener('input', updateCfgStat);
+  $('embyKey').addEventListener('input', updateCfgStat);
+  $('tmdbKey').addEventListener('input', updateCfgStat);
+
+  // 详情弹窗：点遮罩空白处 / 按 Esc 关闭
+  $('detailMask').addEventListener('click', function(e){
+    if(e.target === $('detailMask')) closeDetail();
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape') closeDetail();
+  });
+
+  // ---------- 拖拽加载 ----------
+  (function(){
+    var depth = 0;
+    function hasFiles(e){
+      var dt = e.dataTransfer;
+      if(!dt) return false;
+      if(dt.types && dt.types.indexOf && dt.types.indexOf('Files') >= 0) return true;
+      return !!(dt.files && dt.files.length);
+    }
+    window.addEventListener('dragenter', function(e){
+      if(!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      document.body.classList.add('dragging');
+    });
+    window.addEventListener('dragover', function(e){
+      if(!hasFiles(e)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+    window.addEventListener('dragleave', function(e){
+      if(!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if(depth === 0) document.body.classList.remove('dragging');
+    });
+    window.addEventListener('drop', function(e){
+      if(!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      document.body.classList.remove('dragging');
+      var files = e.dataTransfer.files;
+      if(!files || !files.length) return;
+      var f = files[0];
+      if(!/\.json$/i.test(f.name)){
+        setErr('只支持拖入 .json 文件（本工具导出的扫描结果）。\n你拖入的是：' + f.name);
+        return;
+      }
+      loadResultFile(f);
+    });
+  })();
+
+  loadCfg();
+  initEye();
+  initFold();
+  updateCfgStat();
+  // 先探测代理，再恢复结果：代理模式下优先从服务器目录加载
+  (async function(){
+    await detectProxy();
+    var has = await restoreResult();
+    initLibBarEmpty();
+    updateCfgStat();
+    if(!has) showWelcome();
+  })();
+})();
+</script>
+</body>
+</html>

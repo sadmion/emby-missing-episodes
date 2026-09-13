@@ -1,0 +1,53 @@
+# Emby 缺集检测工具 - Docker Compose
+#
+# 本机使用：
+#   docker compose up -d --build     启动
+#   docker compose down              停止
+#   docker compose logs -f           看日志
+#
+# 部署到服务器：
+#   1. 复制 .env.example 为 .env，按需修改
+#   2. docker compose up -d --build
+#
+# 配置项都放在 .env 里（含注释说明），本文件一般不用改。
+
+services:
+  emby-missing-episodes:
+    build: .
+    image: emby-missing-episodes:latest
+    container_name: emby-missing-episodes
+    restart: unless-stopped
+
+    ports:
+      # 左边是宿主机监听的地址和端口，由 .env 的 BIND_IP / PORT 控制。
+      # 默认只监听 127.0.0.1（最安全），公网访问需自行开启并配安全组。
+      - "${BIND_IP:-127.0.0.1}:${PORT:-8787}:8787"
+
+    environment:
+      # 容器内监听 0.0.0.0（必须，否则宿主机访问不到）
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      TMDB_HOST: "${TMDB_HOST:-api.tmdb.org}"
+      TMDB_IMAGE_HOST: "${TMDB_IMAGE_HOST:-image.tmdb.org}"
+      TMDB_TIMEOUT: "${TMDB_TIMEOUT:-12000}"
+      # 下面三项可选，留空即在网页里手填
+      EMBY_URL: "${EMBY_URL:-}"
+      EMBY_KEY: "${EMBY_KEY:-}"
+      TMDB_KEY: "${TMDB_KEY:-}"
+      # 扫描结果存放目录（容器内）
+      DATA_DIR: "/app/data"
+
+    # 扫描结果持久化：挂到宿主机 ./data，删容器重建后结果仍在
+    volumes:
+      - "./data:/app/data"
+
+    # 让容器能用 host.docker.internal 访问宿主机（Linux 需要）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # 日志滚动，避免长期运行把磁盘写满
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
