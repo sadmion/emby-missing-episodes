@@ -194,9 +194,29 @@
     -e EMBY_KEY=你的Emby密钥
     -e TMDB_KEY=你的TMDB密钥
 
-【第 3 步】想用 compose 管理（可选）
+【第 3 步】用 compose 管理（推荐）
 
-  新建 docker-compose.yml：
+  **项目里已经带了一份现成的文件 `docker-compose.ghcr.yml`**，
+  直接用它就行，不用自己写：
+
+      docker compose -f docker-compose.ghcr.yml up -d
+      docker compose -f docker-compose.ghcr.yml down      # 停止
+      docker compose -f docker-compose.ghcr.yml logs -f   # 看日志
+      docker compose -f docker-compose.ghcr.yml pull      # 更新镜像
+
+  所以完整流程是（在服务器上）：
+
+      git clone https://github.com/sadmion/emby-missing-episodes.git
+      cd emby-missing-episodes
+      cp .env.example .env        # 可选，想改端口/预填 Key 才需要
+      docker compose -f docker-compose.ghcr.yml up -d
+
+  两份 compose 文件的分工：
+
+      docker-compose.yml         build: .            → 现场构建
+      docker-compose.ghcr.yml    image: ghcr.io/...  → 拉现成镜像
+
+  也可以完全不用 clone，手写一份最小的：
 
       services:
         emby-missing-episodes:
@@ -217,15 +237,12 @@
               max-size: "10m"
               max-file: "3"
 
-  然后：
-
-      docker compose up -d
-
 【第 4 步】更新版本
 
   上游发了新版镜像后：
 
-      docker compose pull && docker compose up -d
+      docker compose -f docker-compose.ghcr.yml pull
+      docker compose -f docker-compose.ghcr.yml up -d
       # 或不用 compose：
       docker pull ghcr.io/sadmion/emby-missing-episodes:latest
       docker stop emby-missing-episodes && docker rm emby-missing-episodes

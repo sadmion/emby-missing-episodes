@@ -1,0 +1,66 @@
+# Emby 缺集检测工具 - Docker Compose（使用 GHCR 现成镜像）
+#
+# 与默认的 docker-compose.yml 的区别：
+#   默认那份是 build: .        → 在你本机/服务器现场构建镜像
+#   这一份是 image: ghcr.io/... → 直接拉取已经构建好的现成镜像
+#
+# 什么时候用这一份：
+#   - 服务器没装构建环境，或磁盘/性能小，不想现场 build
+#   - 想跳过构建、启动更快（不用下载 node 基础镜像）
+#   - 多台机器部署，统一用同一个镜像
+#
+# 用法：
+#   docker compose -f docker-compose.ghcr.yml up -d      启动
+#   docker compose -f docker-compose.ghcr.yml down       停止
+#   docker compose -f docker-compose.ghcr.yml logs -f    看日志
+#   docker compose -f docker-compose.ghcr.yml pull       更新到最新镜像
+#
+# 想让它成为默认（省得每次带 -f），可以：
+#   ln -sf docker-compose.ghcr.yml docker-compose.override.yml
+#
+# 镜像地址（公开可拉，无需登录）：
+#   ghcr.io/sadmion/emby-missing-episodes:latest
+#   同时提供 linux/amd64 与 linux/arm64，群晖/树莓派也能用。
+#
+# 配置项同样可以通过 .env 覆盖（复制 .env.example 为 .env 后按需修改）。
+
+services:
+  emby-missing-episodes:
+    # 直接使用 GHCR 上的现成镜像，不现场构建
+    image: ghcr.io/sadmion/emby-missing-episodes:${IMAGE_TAG:-latest}
+    container_name: emby-missing-episodes
+    restart: unless-stopped
+
+    ports:
+      # 左边是宿主机监听的地址和端口，由 .env 的 BIND_IP / PORT 控制。
+      # 默认只监听 127.0.0.1（最安全），公网访问需自行开启并配安全组。
+      - "${BIND_IP:-127.0.0.1}:${PORT:-8787}:8787"
+
+    environment:
+      # 容器内监听 0.0.0.0（必须，否则宿主机访问不到）
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      TMDB_HOST: "${TMDB_HOST:-api.tmdb.org}"
+      TMDB_IMAGE_HOST: "${TMDB_IMAGE_HOST:-image.tmdb.org}"
+      TMDB_TIMEOUT: "${TMDB_TIMEOUT:-12000}"
+      # 下面三项可选，留空即在网页里手填
+      EMBY_URL: "${EMBY_URL:-}"
+      EMBY_KEY: "${EMBY_KEY:-}"
+      TMDB_KEY: "${TMDB_KEY:-}"
+      # 扫描结果存放目录（容器内）
+      DATA_DIR: "/app/data"
+
+    # 扫描结果持久化：挂到宿主机 ./data，删容器重建后结果仍在
+    volumes:
+      - "./data:/app/data"
+
+    # 让容器能用 host.docker.internal 访问宿主机（Linux 需要）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # 日志滚动，避免长期运行把磁盘写满
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

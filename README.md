@@ -55,8 +55,22 @@ docker run -d \
   ghcr.io/sadmion/emby-missing-episodes:latest
 ```
 
-> 镜像来自 GitHub Container Registry。若拉取提示需要认证，
-> 见下方 [自动构建镜像](#自动构建镜像github-actions) 一节的登录说明。
+> 镜像来自 GitHub Container Registry，**公开可直接拉取，无需登录**。
+
+### 用 Compose 拉现成镜像（不构建）
+
+项目里额外提供 `docker-compose.ghcr.yml`，直接拉 GHCR 镜像，跳过构建：
+
+```bash
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+适合服务器没装构建环境、或想启动更快的情况。
+
+| 文件 | 行为 |
+|---|---|
+| `docker-compose.yml` | `build: .` — 现场构建镜像 |
+| `docker-compose.ghcr.yml` | `image: ghcr.io/...` — 拉现成镜像 |
 
 **服务器部署（阿里云 / VPS）：** 见 [`部署文档.txt`](部署文档.txt)，或一键脚本：
 
@@ -209,7 +223,8 @@ emby-missing-episodes.html   工具主体（单文件前端）
 emby-proxy.js                代理服务器（绕开 CORS / 转发 TMDB / 代理海报）
 
 Dockerfile                   Docker 镜像定义
-docker-compose.yml           Docker Compose 配置
+docker-compose.yml           Docker Compose 配置（源码现场构建）
+docker-compose.ghcr.yml      Docker Compose 配置（拉取 GHCR 现成镜像）
 .dockerignore                构建时排除的文件
 .env.example                 环境变量模板
 deploy.sh                    服务器一键部署脚本
