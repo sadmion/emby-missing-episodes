@@ -183,19 +183,57 @@ curl -I http://127.0.0.1:8787/__health   # 返回 200 说明容器内部一切�
 
 返回 200 但外部打不开 → 问题必然在「对外暴露」层（绑定地址 / 安全组 / 系统防火墙），
 不在容器本身。
+
+---
+
+## 更新到新版本
+
+```bash
+./update.sh
+```
+
+自动完成：记录当前版本 → 拉新镜像 → 重建容器 → 健康检查（失败会给出回滚命令）。
+
+手动等价命令：
+
+```bash
+docker compose -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+**不会丢的东西**：扫描结果存在浏览器 localStorage，配置在 `.env`，更新都不影响。
+
+**更新不生效？** 多半是 `.env` 里 `IMAGE_TAG` 被锁在具体版本号上了：
+
+```bash
+grep IMAGE_TAG .env     # 若是 1.0.0 这类值，改成 latest
+```
+
+**回滚**：在 `.env` 里指定旧版本号再 `up -d`：
+
+```bash
+IMAGE_TAG=1.0.0 docker compose -f docker-compose.ghcr.yml up -d
+```
+
+完整说明见 [`更新指南.txt`](更新指南.txt)（含维护者发布流程）。
+
 ---
 
 ## 自动构建镜像（GitHub Actions）
 
 仓库配好了 [`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)，
-推 tag 即自动构建并推送到 **GitHub Container Registry (GHCR)**。
+构建产物推送到 **GitHub Container Registry (GHCR)**。
 
 **无需任何配置** —— 用 GitHub 内置的 `GITHUB_TOKEN` 认证，不用注册额外账号、
 不用配 Secret。开箱即用。
 
-**触发构建：**
+**两种触发方式：**
 
 ```bash
+# 1. 推 main → 自动构建，滚动更新 latest（日常改动用这个）
+git push
+
+# 2. 打 tag → 额外产出正式版本号 1.0.0 / 1.0 / 1（发稳定版时用）
 git tag v1.0.0
 git push origin v1.0.0
 ```
@@ -203,8 +241,8 @@ git push origin v1.0.0
 构建完成后镜像地址为：
 
 ```
-ghcr.io/sadmion/emby-missing-episodes:1.0.0
-ghcr.io/sadmion/emby-missing-episodes:latest
+ghcr.io/sadmion/emby-missing-episodes:latest    # 跟着 main 走
+ghcr.io/sadmion/emby-missing-episodes:1.0.0     # 正式版本，可锁定
 ```
 
 同时提供 `linux/amd64` 和 `linux/arm64` 两种架构（群晖、树莓派等 ARM 设备可用）。
@@ -213,17 +251,11 @@ ghcr.io/sadmion/emby-missing-episodes:latest
 
 ### 拉取使用
 
-**首次拉取需要登录**（GHCR 的公开镜像要求先用 GitHub 账号认证一次）：
+镜像**公开可直接拉取，无需登录**：
 
 ```bash
-# 用 GitHub 用户名 + Personal Access Token（勾选 read:packages）
-echo "你的PAT" | docker login ghcr.io -u sadmion --password-stdin
 docker pull ghcr.io/sadmion/emby-missing-episodes:latest
 ```
-
-> 之后可以把这个包的可见性设为 Public：
-> 仓库 → 右下角 **Packages** → 点进镜像 → **Package settings** → Change visibility → Public。
-> 设为公开后，**任何人不登录也能直接 pull**。
 
 ### 在 compose 里使用
 
@@ -233,8 +265,9 @@ services:
     image: ghcr.io/sadmion/emby-missing-episodes:latest
     container_name: emby-missing-episodes
     restart: unless-stopped
+    pull_policy: always          # 保证 up -d 时能拿到最新镜像
     ports:
-      - "127.0.0.1:8787:8787"
+      - "8787:8787"              # 公网访问；只给本机用则写 127.0.0.1:8787:8787
     environment:
       HOST: "0.0.0.0"
       PORT: "8787"
@@ -264,6 +297,8 @@ docker-compose.ghcr.yml      Docker Compose 配置（拉取 GHCR 现成镜像）
 .dockerignore                构建时排除的文件
 .env.example                 环境变量模板
 deploy.sh                    服务器一键部署脚本
+update.sh                    一键更新到新版本（含健康检查与回滚提示）
+diagnose.sh                  访问故障一键诊断
 启动docker.bat / 停止docker.bat   Windows Docker 一键启停
 启动代理.bat                  Windows 本机 Node 一键启动
 
@@ -271,6 +306,7 @@ deploy.sh                    服务器一键部署脚本
 README.md                    本文件
 README.txt                   详细使用说明
 部署文档.txt                 服务器部署完整指南
+更新指南.txt                 更新与版本发布说明
 ```
 
 ---

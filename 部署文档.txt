@@ -467,22 +467,57 @@ GitHub 的服务器上有 Docker，它替你 build 并 push 到镜像仓库。
 七、日常维护命令
 ##############################################################
 
-在 /opt/emby-missing-episodes 目录下执行：
+⚠️ 用哪个 compose 文件，命令里就要一直带着对应的 -f。
+   下面以 docker-compose.ghcr.yml（拉镜像方式）为例。
+   若你用的是源码构建方式，把 -f 参数换成 -f docker-compose.yml，并去掉 -f 那串。
 
-  docker compose logs -f          实时看日志
-  docker compose ps               看运行状态
-  docker compose restart          重启
-  docker compose down             停止并删除容器
-  docker compose up -d            再次启动
+在项目目录下执行：
 
-更新代码后重新部署：
-
-  git pull
-  docker compose up -d --build
+  docker compose -f docker-compose.ghcr.yml logs -f      实时看日志
+  docker compose -f docker-compose.ghcr.yml ps           看运行状态
+  docker compose -f docker-compose.ghcr.yml restart      重启
+  docker compose -f docker-compose.ghcr.yml down         停止并删除容器
+  docker compose -f docker-compose.ghcr.yml up -d        再次启动
 
 查看容器资源占用：
 
   docker stats emby-missing-episodes
+
+--------------------------------------------------------------
+更新到新版本
+--------------------------------------------------------------
+
+最省事的方式：
+
+  ./update.sh
+
+（自动拉镜像 + 重建 + 健康检查，失败会提示回滚命令）
+
+手动方式：
+
+  docker compose -f docker-compose.ghcr.yml pull
+  docker compose -f docker-compose.ghcr.yml up -d
+
+如果你是源码构建方式（docker-compose.yml）：
+
+  git pull
+  docker compose up -d --build
+
+更新后想清理旧镜像释放磁盘：
+
+  docker image prune -f
+
+**更新不生效？** 检查 .env 里的 IMAGE_TAG：
+
+  grep IMAGE_TAG .env
+
+  若是 1.0.0 这类具体版本号 → 被锁定了，改成 latest 再 up -d。
+
+**想回滚到旧版本**：
+
+  IMAGE_TAG=1.0.0 docker compose -f docker-compose.ghcr.yml up -d
+
+完整说明见同目录的「更新指南.txt」。
 
 
 ##############################################################

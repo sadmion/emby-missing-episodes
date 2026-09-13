@@ -1,10 +1,14 @@
 name: Build and Push Docker Image
 
 # 什么时候自动构建镜像：
-#   1. 打 tag（如 v1.0.0）—— 推荐方式，会打出对应版本标签
-#   2. 手动触发（Actions 页面点 Run workflow）
+#   1. push 到 main 分支 —— 自动构建并更新 latest 标签
+#      （改了代码 push 上来，别人 docker compose pull 就能拿到新版）
+#   2. 打 tag（如 v1.0.0）—— 额外产出 1.0.0 / 1.0 / 1 等正式版本号
+#   3. 手动触发（Actions 页面点 Run workflow）
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"          # 例：v1.0.0
       - "v*.*"            # 例：v1.0
@@ -44,13 +48,19 @@ jobs:
           # 镜像名必须全小写，GHCR 要求
           images: ghcr.io/${{ github.repository }}
           tags: |
-            # 打 v1.2.3 tag 时生成 1.2.3 / 1.2 / 1
+            # ---- 打 v1.2.3 tag 时：生成 1.2.3 / 1.2 / 1 ----
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            # 手动触发时用 short sha 做标签
+
+            # ---- push 到 main 时：滚动更新 latest ----
+            # 只在 main 分支的 push 事件里生效，打 tag 时不会重复执行
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+            # ---- 手动触发时：用 short sha 做标签，便于回溯是哪次提交 ----
             type=sha,prefix=sha-,enable=${{ github.event_name == 'workflow_dispatch' }}
-          # latest 交给 flavor 管理：打正式 tag 时自动维护 latest
+
+          # semver 标签出现时自动维护 latest（打 tag 也更新 latest）
           flavor: |
             latest=auto
 

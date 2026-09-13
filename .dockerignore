@@ -11,6 +11,7 @@ README.txt
 停止docker.bat
 deploy.sh
 diagnose.sh
+update.sh
 .env
 .env.example
 config.json

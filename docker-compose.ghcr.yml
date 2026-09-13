@@ -31,6 +31,12 @@ services:
     container_name: emby-missing-episodes
     restart: unless-stopped
 
+    # 每次 up 都去远程确认镜像是否更新。
+    # 不加这行的后果：latest 标签变了但本地缓存还在，容器照旧启动旧版本 —— 这是
+    # 「明明更新了却没生效」的头号原因。
+    # 想锁定某个具体版本时，把 .env 里 IMAGE_TAG 设为 1.2.3（这时本行可删）。
+    pull_policy: always
+
     ports:
       # 左边是宿主机监听的地址和端口，由 .env 的 BIND_IP / PORT 控制。
       # 默认 0.0.0.0 = 公网可访问，需在阿里云安全组放行该端口。
